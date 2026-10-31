@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Andes.Mailer.Common\Andes.Mailer.Common.csproj" />
+  </ItemGroup>
+
+</Project>

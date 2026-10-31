@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <UserSecretsId>d6165afd-14fe-4199-bdaf-18560f0ddbc7</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Andes.Mailer.Unit.Test" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="Scalar.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Andes.Mailer.Service\Andes.Mailer.Service.csproj" />
+    <ProjectReference Include="..\Andes.Mailer.Repository\Andes.Mailer.Repository.csproj" />
+    <ProjectReference Include="..\Andes.Mailer.Dto\Andes.Mailer.Dto.csproj" />
+    <ProjectReference Include="..\Andes.Mailer.Common\Andes.Mailer.Common.csproj" />
+  </ItemGroup>
+
+</Project>

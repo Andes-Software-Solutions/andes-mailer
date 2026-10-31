@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/test/">
+    <Project Path="test/Andes.Mailer.Integration.Test/Andes.Mailer.Integration.Test.csproj" />
+    <Project Path="test/Andes.Mailer.Unit.Test/Andes.Mailer.Unit.Test.csproj" />
+  </Folder>
+  <Project Path="Andes.Mailer.Api/Andes.Mailer.Api.csproj" />
+  <Project Path="Andes.Mailer.Common/Andes.Mailer.Common.csproj" />
+  <Project Path="Andes.Mailer.Dto/Andes.Mailer.Dto.csproj" />
+  <Project Path="Andes.Mailer.Entity/Andes.Mailer.Entity.csproj" />
+  <Project Path="Andes.Mailer.Repository/Andes.Mailer.Repository.csproj" />
+  <Project Path="Andes.Mailer.Service/Andes.Mailer.Service.csproj" />
+</Solution>
