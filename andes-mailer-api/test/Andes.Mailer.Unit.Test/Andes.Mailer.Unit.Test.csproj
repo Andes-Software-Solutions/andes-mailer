@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="NSubstitute.Analyzers.CSharp" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Andes.Mailer.Api\Andes.Mailer.Api.csproj" />
+    <ProjectReference Include="..\..\Andes.Mailer.Service\Andes.Mailer.Service.csproj" />
+    <ProjectReference Include="..\..\Andes.Mailer.Repository\Andes.Mailer.Repository.csproj" />
+    <ProjectReference Include="..\..\Andes.Mailer.Entity\Andes.Mailer.Entity.csproj" />
+    <ProjectReference Include="..\..\Andes.Mailer.Dto\Andes.Mailer.Dto.csproj" />
+    <ProjectReference Include="..\..\Andes.Mailer.Common\Andes.Mailer.Common.csproj" />
+  </ItemGroup>
+
+</Project>

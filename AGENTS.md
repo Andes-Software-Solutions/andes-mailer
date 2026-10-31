@@ -46,11 +46,45 @@ After changing code, run the matching reviewer on the diff: `andes-csharp-code-r
 
 ## Layout
 
-<!-- The folders that matter and how to navigate them. -->
+`andes-mailer-api/` holds the .NET 10 Minimal API solution, `Andes.Mailer.slnx`, laid out per `dotnet-api-architecture`:
+
+| Path | Holds |
+| --- | --- |
+| `Andes.Mailer.Api/` | Host: `Program.cs`, exception handling, Problem Details, OpenAPI, health endpoints |
+| `Andes.Mailer.Service/` | Business logic; services query the `DbContext` directly |
+| `Andes.Mailer.Repository/Sql/` | SQL Server plumbing: `AndesMailerDbContext`, base configurations, interceptors, options, health probe |
+| `Andes.Mailer.Entity/` | Plain entity classes |
+| `Andes.Mailer.Dto/` | Request and response DTOs |
+| `Andes.Mailer.Common/` | Enums, constants, options validation |
+| `test/Andes.Mailer.Unit.Test/` | Unit tests; no Docker needed |
+| `test/Andes.Mailer.Integration.Test/` | Host tests against a SQL Server 2025 container |
 
 ## Build, test, run
 
-<!-- The exact commands to build, test, and run locally. -->
+Run these from `andes-mailer-api/`. `dotnet test` needs Docker running; the integration suite starts the `2025-CU9-ubuntu-24.04` SQL Server image.
+
+```bash
+dotnet build
+dotnet test
+dotnet format --verify-no-changes
+```
+
+The target database is SQL Server 2025. EF Core is configured with compatibility level 170 in `SqlPersistenceConfiguration`; keep the database at the same level.
+
+To run the API locally against the default `MSSQLSERVER` instance, once per machine:
+
+```bash
+sqlcmd -S localhost -E -C -Q "CREATE DATABASE AndesMailer"
+dotnet user-secrets set "SqlDb:ConnectionString" "Server=localhost;Database=AndesMailer;Integrated Security=True;TrustServerCertificate=True" --project Andes.Mailer.Api
+```
+
+Then:
+
+```bash
+dotnet run --project Andes.Mailer.Api
+```
+
+The `http` profile listens on `http://localhost:5145`. `/health/live` reports the host and `/health/ready` reports the database; `/scalar` serves the API reference in Development. The API refuses to start without `SqlDb:ConnectionString`, and `dotnet ef` needs it too because it starts the host.
 
 ## Conventions
 
