@@ -16,7 +16,11 @@ const folder = (name) => [`@${name}/*`, `**/app/${name}/*`];
 const except = (name) => [`!@${name}`, `!**/app/${name}`];
 
 // Nor can it re-include files by name inside an excluded folder, so "except models" needs a regex.
-const coreExceptModels = String.raw`^(@core/|(.*/)?app/core/)(?!.*\.model$)`;
+// Bans match the import string, not the resolved path, so a relative import needs its own pattern.
+// Relative imports between features stay unbanned: whether `../` leaves a feature depends on the file's depth.
+const coreExceptModels = String.raw`^(@core/|(\.\./)+core/|(.*/)?app/core/)(?!.*\.model$)`;
+const relativeFeatures = String.raw`^(\.\./)+features/`;
+const relativeFeatureModels = String.raw`^(\.\./)+features/.*\.model$`;
 const anyAppExceptModels = String.raw`^(@(core|shared|features)/|(.*/)?app/(core|shared|features)/|\.{1,2}/)(?!.*\.model$)`;
 
 /**
@@ -48,9 +52,9 @@ function layerBans(rootDir, { srcDir = 'src', banForms = false, skill = 'angular
 
   // A folder's models get a block of their own that keeps the folder's bans and adds the model bans,
   // because the later of two blocks matching one file would otherwise drop the earlier one's.
-  const layer = (dir, { group = [], regexes = [] }) => [
+  const layer = (dir, { group = [], regexes = [], modelRegexes = [] }) => [
     block([`${dir}/**/*.ts`], ['**/*.spec.ts', '**/*.model.ts'], group, regexes),
-    block([`${dir}/**/*.model.ts`], ['**/*.spec.ts'], ['@angular/*', '@ngrx/*', ...group], [anyAppExceptModels]),
+    block([`${dir}/**/*.model.ts`], ['**/*.spec.ts'], ['@angular/*', '@ngrx/*', ...group], [anyAppExceptModels, ...modelRegexes]),
   ];
 
   const features = () => {
@@ -67,8 +71,8 @@ function layerBans(rootDir, { srcDir = 'src', banForms = false, skill = 'angular
   return [
     ...(banForms ? [{ files: [`${src}/**/*.ts`], rules: { 'no-restricted-imports': ['error', { paths }] } }] : []),
     block([`${app}/*.model.ts`], ['**/*.spec.ts'], ['@angular/*', '@ngrx/*'], [anyAppExceptModels]),
-    ...layer(`${app}/shared`, { group: folder('features'), regexes: [coreExceptModels] }),
-    ...layer(`${app}/core`, { group: folder('features') }),
+    ...layer(`${app}/shared`, { group: folder('features'), regexes: [coreExceptModels, relativeFeatures], modelRegexes: [relativeFeatureModels] }),
+    ...layer(`${app}/core`, { group: folder('features'), regexes: [relativeFeatures], modelRegexes: [relativeFeatureModels] }),
     ...features().flatMap((feature) =>
       layer(`${app}/features/${feature}`, { group: [...folder('features'), ...except(`features/${feature}`)] }),
     ),
