@@ -59,7 +59,21 @@ After changing code, run the matching reviewer on the diff: `andes-csharp-code-r
 | `test/Andes.Mailer.Unit.Test/` | Unit tests; no Docker needed |
 | `test/Andes.Mailer.Integration.Test/` | Host tests against a SQL Server 2025 container |
 
+`andes-mailer-ui/` holds the Angular 22 workspace, laid out per `angular-ui-architecture`:
+
+| Path | Holds |
+| --- | --- |
+| `src/app/core/` | App-wide singletons by topic: `api/` wire DTOs, `config/`, `navigation/` route paths |
+| `src/app/features/` | One folder per feature; `home/` is the eager landing page |
+| `src/app/shared/` | Reusable pieces with no business logic |
+| `src/testing/` | Fakes, fixtures, shared test providers |
+| `src/styles.scss` | Bootstrap compiled from Sass with the Andes palette, light and dark |
+| `src/proxy.conf.json` | Dev proxy from `/api/**` to the API's `https` profile |
+| `eslint-layer-bans.js` | Layer lint from `angular-ui-architecture`; features never import each other |
+
 ## Build, test, run
+
+### API
 
 Run these from `andes-mailer-api/`. `dotnet test` needs Docker running; the integration suite starts the `2025-CU9-ubuntu-24.04` SQL Server image.
 
@@ -86,6 +100,25 @@ dotnet run --project Andes.Mailer.Api
 
 The `http` profile listens on `http://localhost:5145`. `/health/live` reports the host and `/health/ready` reports the database; `/scalar` serves the API reference in Development. The API refuses to start without `SqlDb:ConnectionString`, and `dotnet ef` needs it too because it starts the host.
 
+### UI
+
+Run these from `andes-mailer-ui/`. Use `npx ng`, not a global `ng`, so the workspace's CLI runs.
+
+```bash
+npx ng build
+npx ng lint
+npx ng test --watch=false
+```
+
+To run the UI against the API, start the API on its `https` profile from `andes-mailer-api/`, then serve the UI from `andes-mailer-ui/`:
+
+```bash
+dotnet run --launch-profile https --project Andes.Mailer.Api
+npx ng serve
+```
+
+The UI listens on `http://localhost:4200` and forwards `/api/**` to `https://localhost:7093`, which only the `https` profile serves. Map API endpoints under `/api` so the proxy reaches them; call them from the UI with relative `/api/...` URLs.
+
 ## Conventions
 
-<!-- Project-specific rules the andes block above does not cover: branching, naming, review, release. -->
+- **Bootstrap in `andes-mailer-ui/`:** use the npm `bootstrap` and `@popperjs/core` packages, without ng-bootstrap. This overrides the `angular-ui-architecture` default. Import Bootstrap's JavaScript per component (`import { Dropdown } from 'bootstrap'`) rather than as a global script; create each instance in `afterNextRender` and call `dispose()` on destroy.

@@ -1,0 +1,20 @@
+// Andes palette by role (andes-brand). New colours join this block; components read --bs-* variables.
+@use 'bootstrap/scss/bootstrap' with (
+  $primary: #14324f,
+  $secondary: #5a6e82,
+  $info: #0e7fa8,
+  $success: #2e9c58,
+  $warning: #9c6210,
+  $danger: #c0392b,
+  $body-color: #16283a,
+  $border-color: #dce5ee,
+  $headings-color: #14324f,
+  $color-contrast-dark: #0b1f33,
+  $font-family-sans-serif: (Inter, Calibri, Arial, sans-serif),
+  $headings-font-family: (Montserrat, Arial, sans-serif),
+  $body-bg-dark: #0b1f33,
+  $body-color-dark: #ffffff,
+  $headings-color-dark: #ffffff,
+  $link-color-dark: #21a8d8,
+  $primary-text-emphasis-dark: #21a8d8
+);
