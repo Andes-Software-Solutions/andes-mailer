@@ -1,9 +1,5 @@
 import { InjectionToken } from '@angular/core';
-import {
-  BrowserCacheLocation,
-  Configuration,
-  IPublicClientApplication,
-} from '@azure/msal-browser';
+import { BrowserCacheLocation, Configuration, IPublicClientApplication } from '@azure/msal-browser';
 import { AppConfig } from '@core/config/app-config.model';
 import { redirectUri } from './redirect-bridge';
 

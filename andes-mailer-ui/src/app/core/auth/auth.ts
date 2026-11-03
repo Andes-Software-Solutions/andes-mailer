@@ -1,6 +1,11 @@
 import { DOCUMENT, Location } from '@angular/common';
 import { Service, inject } from '@angular/core';
-import { AccountInfo, InteractionRequiredAuthError } from '@azure/msal-browser';
+import {
+  AccountInfo,
+  AuthenticationResult,
+  CacheLookupPolicy,
+  InteractionRequiredAuthError,
+} from '@azure/msal-browser';
 import { APP_CONFIG } from '@core/config/app-config-token';
 import { MSAL_INSTANCE } from './msal-instance-token';
 
@@ -12,6 +17,16 @@ export interface AuthHandshake {
   readonly account: AccountInfo | null;
   /** Set when the redirect came back carrying a failure. */
   readonly failed: boolean;
+}
+
+export interface TokenOptions {
+  /** Skips the cached access token, for one the API rejected or one about to expire. */
+  readonly refresh?: boolean;
+  /**
+   * When false, a sign-in that Entra requires is reported, never started, so a call the user
+   * didn't make can't navigate away from their work.
+   */
+  readonly interactive?: boolean;
 }
 
 @Service()
@@ -52,22 +67,34 @@ export class Auth {
   }
 
   /** @throws When no token is available, including while a redirect to Entra starts. */
-  async getAccessToken(): Promise<string> {
+  async getAccessToken(options: Pick<TokenOptions, 'refresh'> = {}): Promise<string> {
+    const { accessToken } = await this.acquireToken(options);
+
+    return accessToken;
+  }
+
+  /** @throws When no token is available, including while a redirect to Entra starts. */
+  async acquireToken({
+    refresh = false,
+    interactive = true,
+  }: TokenOptions = {}): Promise<AuthenticationResult> {
     const { account } = await this.ready();
 
     if (!account) {
       throw new Error('No account is signed in.');
     }
 
-    const request = { scopes: this._scopes, account };
-
     try {
-      const { accessToken } = await this._instance.acquireTokenSilent(request);
-
-      return accessToken;
+      return await this._instance.acquireTokenSilent({
+        scopes: this._scopes,
+        account,
+        cacheLookupPolicy: refresh
+          ? CacheLookupPolicy.RefreshTokenAndNetwork
+          : CacheLookupPolicy.Default,
+      });
     } catch (cause) {
-      if (cause instanceof InteractionRequiredAuthError) {
-        await this._instance.acquireTokenRedirect(request);
+      if (interactive && cause instanceof InteractionRequiredAuthError) {
+        await this._instance.acquireTokenRedirect({ scopes: this._scopes, account });
       }
 
       throw cause;

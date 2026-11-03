@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import {
   BrowserAuthError,
+  CacheLookupPolicy,
   IPublicClientApplication,
   InteractionRequiredAuthError,
 } from '@azure/msal-browser';
@@ -140,7 +141,19 @@ describe('Auth', () => {
       expect(acquireTokenSilent).toHaveBeenCalledWith({
         scopes: [testApiScope],
         account: fakeAccount(),
+        cacheLookupPolicy: CacheLookupPolicy.Default,
       });
+    });
+
+    it('skips the cached token when asked to refresh', async () => {
+      const acquireTokenSilent = vi.fn(() => Promise.resolve(fakeAuthResult()));
+      const auth = setup(signedInMsal({ acquireTokenSilent }));
+
+      await auth.getAccessToken({ refresh: true });
+
+      expect(acquireTokenSilent).toHaveBeenCalledWith(
+        expect.objectContaining({ cacheLookupPolicy: CacheLookupPolicy.RefreshTokenAndNetwork }),
+      );
     });
 
     it('rejects when nobody is signed in', async () => {
@@ -174,6 +187,29 @@ describe('Auth', () => {
       );
 
       await expect(auth.getAccessToken()).rejects.toBe(failure);
+      expect(acquireTokenRedirect).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('acquireToken', () => {
+    it('returns the whole result, so a caller can read when it expires', async () => {
+      const result = fakeAuthResult({ expiresOn: new Date('2026-11-02T10:00:00Z') });
+      const auth = setup(signedInMsal({ acquireTokenSilent: () => Promise.resolve(result) }));
+
+      await expect(auth.acquireToken()).resolves.toBe(result);
+    });
+
+    it('never redirects when not interactive, even if Entra needs the user', async () => {
+      const failure = new InteractionRequiredAuthError('interaction_required', 'correlation-id');
+      const acquireTokenRedirect = vi.fn(() => Promise.resolve());
+      const auth = setup(
+        signedInMsal({
+          acquireTokenSilent: () => Promise.reject(failure),
+          acquireTokenRedirect,
+        }),
+      );
+
+      await expect(auth.acquireToken({ interactive: false })).rejects.toBe(failure);
       expect(acquireTokenRedirect).not.toHaveBeenCalled();
     });
   });

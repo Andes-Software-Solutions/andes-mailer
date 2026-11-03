@@ -8,7 +8,7 @@ Both apps sign users in with Microsoft Entra ID. The UI has no login screen: a s
 2. Entra returns the browser to `<origin>/auth`. That path has no Angular route.
 3. `src/main.ts` checks the URL before Angular boots. On `/auth` it runs MSAL's redirect bridge (`broadcastResponseToMainFrame`), which sends the browser back to the page that started the sign-in. The same code serves the hidden iframe of a silent token renewal, where the bridge posts the response to the waiting main frame. If `/auth` carries no response (for example, someone opened it directly), the app navigates to `/login-failed`.
 4. On the starting page, `main.ts` loads `config.json`, initializes MSAL, and boots Angular. The guard runs again and awaits `Auth.ready()`, which calls `handleRedirectPromise`, consumes the response, and selects the account. The guard then lets the route through.
-5. `authInterceptor` adds `Authorization: Bearer <token>` to requests whose URL starts with `/api/`, using `acquireTokenSilent`. If Entra needs interaction, it starts `acquireTokenRedirect`.
+5. `authInterceptor` adds `Authorization: Bearer <token>` to requests whose URL starts with `/api/`, using `acquireTokenSilent`. If Entra needs interaction, it starts `acquireTokenRedirect`. A 401 response gets one retry; see [Token renewal](#token-renewal).
 
 Why the bridge runs first: the router could rewrite the hash the bridge reads, and MSAL cannot be initialized inside a DI factory because that cannot await.
 
@@ -17,6 +17,60 @@ Why the bridge runs first: the router could rewrite the hash the bridge reads, a
 `Auth.signIn` sets `andes-mailer.signInAttempt` in `sessionStorage` before leaving. `Auth.ready()` clears it when an account comes back. If the user returns without an account, or the redirect carried an error, the guard sends them to `/login-failed` instead of redirecting again. Without this limit, a return with no account would loop through Entra, and Back would trap a user who abandons the Microsoft page.
 
 `/login-failed` is the only sign-in screen and is the only unguarded route. Its "Try again" button starts a new sign-in that lands on the home page. Keep every other route behind `authGuard`.
+
+## Token renewal
+
+Access tokens are short-lived, and MSAL has no background renewal of its own: it only looks at the cache when something asks for a token. Without help, a tab left open for hours would find its token expired on the next click, and that request would pay for the renewal (or for a redirect to Entra). `TokenRenewal` (`src/app/core/auth/token-renewal.ts`) renews the token ahead of time so requests find a valid one in the cache.
+
+`provideTokenRenewal()` in `app.config.ts` starts it through an app initializer. The initializer does not await `start()`, so renewal never holds up bootstrap. `start()` waits for `Auth.ready()` and does nothing when there is no signed-in account; a signed-out user is handled by `authGuard`. The listeners and timer are removed when the service is destroyed.
+
+### How renewal runs
+
+Renewal goes through `Auth.acquireToken({ refresh, interactive })`:
+
+- `refresh: true` skips the cached access token (`CacheLookupPolicy.RefreshTokenAndNetwork`) and uses the refresh token. If that fails with `InteractionRequiredAuthError`, MSAL falls back to its hidden iframe, which completes through the same `/auth` redirect bridge described in [How sign-in works](#how-sign-in-works). MSAL's iframe timeout is 10 seconds.
+- `interactive: false` means a sign-in that Entra requires is reported as an error and never started, so a call the user didn't make can't navigate away from their work. `interactive` defaults to `true`, which starts `acquireTokenRedirect` instead.
+- `Auth.getAccessToken({ refresh })` wraps `acquireToken` and returns only the token string.
+
+Four triggers call it:
+
+| Trigger | `refresh` | `interactive` | Why |
+| --- | --- | --- | --- |
+| Startup (`start()`) | no | no | If Entra needs the user right now, the page's first request starts the sign-in anyway. |
+| Timer | yes | no | Never redirects from a timer. |
+| Tab becomes visible | no | yes | See below. |
+| Browser comes back online | no | no | The connection can return while the tab is hidden or the user is mid-task. |
+
+Only the timer forces a refresh. The other three ask MSAL for a token with its default lookup, which returns the cached one unless it is within MSAL's own 5-minute window of expiry (`tokenRenewalOffsetSeconds`, 300 s in `@azure/msal-browser` 5.27.0).
+
+### When the timer fires
+
+After every successful renewal, `TokenRenewal` schedules the next one from the new token's `expiresOn`:
+
+- It renews 10 minutes before expiry, ahead of MSAL's 5-minute window, leaving room for a 10-second iframe attempt and a retry.
+- For a token that lives less than 20 minutes, it renews halfway through the lifetime instead, so a short-lived token isn't refreshed on every attempt.
+- The delay is never less than 60 seconds.
+
+Each new schedule replaces the previous timer, so there is at most one pending timer.
+
+### Returning to the tab
+
+Browsers throttle timers in hidden tabs, and a sleeping PC pauses them, so the timer can be late by hours. When `document.visibilityState` becomes `visible`, `TokenRenewal` renews right away. This trigger is interactive on purpose: if Entra needs the user, the redirect happens when they return, before they start work that the page reload would lose.
+
+### When renewal fails
+
+| Failure | What happens |
+| --- | --- |
+| Entra needs interaction (`InteractionRequiredAuthError`) | No new timer is scheduled. The next return to the tab, or the next API request, starts the redirect. |
+| Anything else, such as being offline or an iframe timeout | The error is logged with `console.error` and renewal retries after 1, 2, 4, 8, then 15 minutes (the delay is capped at 15 minutes, so a persistent failure doesn't call Entra every minute from every tab). A successful renewal resets the count. |
+
+### Retry on 401
+
+`authInterceptor` retries a 401 from an `/api/` request once, with a token fetched using `refresh: true`. This covers an API that rejects a token MSAL still trusts, for example when the PC's clock is behind. The retry is interactive, like any request. A 403 is never retried, because a new token carries the same scopes. A second 401 reaches the caller.
+
+### Why a redirect can still happen
+
+Entra's refresh tokens for a single-page application expire 24 hours after sign-in, and using one does not extend that ([Microsoft Learn: refresh token lifetime](https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens)). After that, renewal depends on the hidden iframe and the Entra session cookie. When the browser blocks third-party cookies or the Entra session has ended, the iframe fails and a redirect is unavoidable. The redirect reloads the page, so any unsaved state is lost. A future compose form must save its draft before it can be interrupted this way.
 
 ## How the API validates tokens
 
