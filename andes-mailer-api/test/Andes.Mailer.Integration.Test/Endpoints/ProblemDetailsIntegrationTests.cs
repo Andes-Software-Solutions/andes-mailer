@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 
+using Andes.Mailer.Common.Constants;
 using Andes.Mailer.Integration.Test.TestInfrastructure;
 
 using Microsoft.AspNetCore.Hosting;
@@ -21,8 +22,9 @@ public sealed class ProblemDetailsIntegrationTests(SqlServerFixture fixture)
     [Fact]
     public async Task Get_UnknownRoute_ReturnsNotFoundProblem()
     {
-        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString);
+        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, useTestAuthentication: true);
         using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.ScopesHeader, ApiScopes.AccessAsUser);
 
         using var response = await client.GetAsync(new Uri(UnknownPath, UriKind.Relative), TestContext.Current.CancellationToken);
 
@@ -37,10 +39,11 @@ public sealed class ProblemDetailsIntegrationTests(SqlServerFixture fixture)
     [Fact]
     public async Task Get_UnhandledException_ReturnsUnexpectedProblemWithoutDetail()
     {
-        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString);
+        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, useTestAuthentication: true);
         await using var throwingFactory = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
             services.AddSingleton<IStartupFilter, ThrowingEndpointStartupFilter>()));
         using var client = throwingFactory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.ScopesHeader, ApiScopes.AccessAsUser);
 
         using var response = await client.GetAsync(new Uri(ThrowingEndpointStartupFilter.Path, UriKind.Relative), TestContext.Current.CancellationToken);
 

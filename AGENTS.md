@@ -63,8 +63,8 @@ After changing code, run the matching reviewer on the diff: `andes-csharp-code-r
 
 | Path | Holds |
 | --- | --- |
-| `src/app/core/` | App-wide singletons by topic: `api/` wire DTOs, `config/`, `navigation/` route paths |
-| `src/app/features/` | One folder per feature; `home/` is the eager landing page |
+| `src/app/core/` | App-wide singletons by topic: `api/` wire DTOs, `auth/` MSAL sign-in, `config/` runtime config, `navigation/` route paths |
+| `src/app/features/` | One folder per feature; `home/` is the eager landing page, `auth/` holds the sign-in failure page |
 | `src/app/shared/` | Reusable pieces with no business logic |
 | `src/testing/` | Fakes, fixtures, shared test providers |
 | `src/styles.scss` | Bootstrap compiled from Sass with the Andes palette, light and dark |
@@ -121,4 +121,6 @@ The UI listens on `http://localhost:4200` and forwards `/api/**` to `https://loc
 
 ## Conventions
 
+- **Authentication:** both apps use the Microsoft Entra app registration in `AzureAd` (`appsettings.json`) and `auth` (`andes-mailer-ui/public/config.json`). The API holds no client secret. Its default and fallback authorization policy requires the `access_as_user` scope, so every endpoint is protected unless it calls `.AllowAnonymous()`.
+- **Sign-in in `andes-mailer-ui/`:** use `@azure/msal-browser` directly, not `@azure/msal-angular`. There is no login screen: `authGuard` redirects signed-out users to Entra. Guard every route except `login-failed`. `/auth`, the registered redirect URI, has no route because `src/main.ts` handles it before Angular boots. `http://localhost:4200/auth` must stay registered as a SPA redirect URI, so serve the UI on port 4200.
 - **Bootstrap in `andes-mailer-ui/`:** use the npm `bootstrap` and `@popperjs/core` packages, without ng-bootstrap. This overrides the `angular-ui-architecture` default. Import Bootstrap's JavaScript per component (`import { Dropdown } from 'bootstrap'`) rather than as a global script; create each instance in `afterNextRender` and call `dispose()` on destroy.
