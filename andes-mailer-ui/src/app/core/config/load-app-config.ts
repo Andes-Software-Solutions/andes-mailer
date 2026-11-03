@@ -35,7 +35,13 @@ function assertAppConfig(value: unknown): asserts value is AppConfig {
     throw new Error('auth.authority must be an https URL.');
   }
 
-  if (!Array.isArray(auth.apiScopes) || auth.apiScopes.length === 0) {
-    throw new Error('auth.apiScopes must list at least one scope.');
+  const scopes: unknown = auth.apiScopes;
+
+  if (
+    !Array.isArray(scopes) ||
+    scopes.length === 0 ||
+    !scopes.every((scope) => typeof scope === 'string' && scope.trim() !== '')
+  ) {
+    throw new Error('auth.apiScopes must list at least one scope, each a non-empty string.');
   }
 }

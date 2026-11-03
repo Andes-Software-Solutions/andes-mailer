@@ -47,6 +47,12 @@ describe('loadAppConfig', () => {
       'auth.authority',
     ],
     ['no scopes', { auth: { ...testAppConfig.auth, apiScopes: [] } }, 'auth.apiScopes'],
+    ['an empty scope', { auth: { ...testAppConfig.auth, apiScopes: [' '] } }, 'auth.apiScopes'],
+    [
+      'a scope that is not a string',
+      { auth: { ...testAppConfig.auth, apiScopes: [42] } },
+      'auth.apiScopes',
+    ],
   ])('rejects %s', async (_case, body, message) => {
     respondWith(body);
 
