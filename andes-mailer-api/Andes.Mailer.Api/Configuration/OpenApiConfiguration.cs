@@ -17,8 +17,8 @@ internal static class OpenApiConfiguration
     {
         if (app.Environment.IsDevelopment())
         {
-            app.MapOpenApi();
-            app.MapScalarApiReference();
+            app.MapOpenApi().AllowAnonymous();
+            app.MapScalarApiReference().AllowAnonymous();
         }
 
         return app;

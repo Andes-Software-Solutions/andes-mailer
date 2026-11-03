@@ -25,8 +25,8 @@ internal static class HealthRegistration
 
     public static IEndpointRouteBuilder MapAndesMailerHealth(this IEndpointRouteBuilder app)
     {
-        app.MapHealthChecks(LivePath, new HealthCheckOptions { Predicate = _ => false });
-        app.MapHealthChecks(ReadyPath, new HealthCheckOptions { Predicate = check => check.Tags.Contains(ReadyTag) });
+        app.MapHealthChecks(LivePath, new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
+        app.MapHealthChecks(ReadyPath, new HealthCheckOptions { Predicate = check => check.Tags.Contains(ReadyTag) }).AllowAnonymous();
 
         return app;
     }
