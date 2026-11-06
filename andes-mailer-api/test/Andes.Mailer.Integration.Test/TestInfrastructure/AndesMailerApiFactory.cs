@@ -12,13 +12,15 @@ namespace Andes.Mailer.Integration.Test.TestInfrastructure;
 public sealed class AndesMailerApiFactory(
     string connectionString,
     bool useTestAuthentication = false,
-    IReadOnlyDictionary<string, string?>? configuration = null) : WebApplicationFactory<Program>
+    IReadOnlyDictionary<string, string?>? configuration = null,
+    Action<IServiceCollection>? configureTestServices = null) : WebApplicationFactory<Program>
 {
     private const string TestEnvironment = "Testing";
 
     private readonly string _connectionString = connectionString;
     private readonly bool _useTestAuthentication = useTestAuthentication;
     private readonly IReadOnlyDictionary<string, string?> _configuration = configuration ?? new Dictionary<string, string?>();
+    private readonly Action<IServiceCollection>? _configureTestServices = configureTestServices;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -38,6 +40,11 @@ public sealed class AndesMailerApiFactory(
                     options.DefaultChallengeScheme = TestAuthHandler.SchemeName;
                 })
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { }));
+        }
+
+        if (_configureTestServices is not null)
+        {
+            builder.ConfigureTestServices(_configureTestServices);
         }
     }
 }

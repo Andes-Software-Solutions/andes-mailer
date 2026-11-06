@@ -24,8 +24,12 @@ internal static class AuthenticationConfiguration
             .ValidateWithFluentValidation()
             .ValidateOnStart();
 
+        // Graph calls are app-only (DirectoryUserService), so they need the AzureAd:ClientSecret and nothing from the caller's token.
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddMicrosoftIdentityWebApi(section);
+            .AddMicrosoftIdentityWebApi(section)
+            .EnableTokenAcquisitionToCallDownstreamApi()
+            .AddMicrosoftGraph()
+            .AddInMemoryTokenCaches();
 
         var accessAsUser = new AuthorizationPolicyBuilder()
             .RequireAuthenticatedUser()

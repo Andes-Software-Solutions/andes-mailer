@@ -80,18 +80,22 @@ Entra's refresh tokens for a single-page application expire 24 hours after sign-
 
 Because the fallback policy also covers unmatched routes, an anonymous request to an unknown route now returns 401 instead of 404. An authenticated caller with the scope still gets 404.
 
-`GET /api/users/me` returns the caller's object id and display name; the UI shows the name on the home page.
+`GET /api/users/me` returns the caller's object id and display name; the UI shows the name on the home page. A valid token proves who the caller is; what they may do is decided by roles and permissions, described in [Users and permissions](users-and-permissions.md).
+
+Besides validating tokens, the API acts as itself when it calls Microsoft Graph (to look up a directory account when someone adds a user). That app-only call uses the same registration and needs its own credential; see [Configuration](#configuration).
 
 ## Configuration
 
-The Entra values are public identifiers. There is no client secret anywhere in either app.
+The Entra values (`Instance`, `TenantId`, `ClientId`, `clientId`, `authority`, `apiScopes`) are public identifiers. The UI holds no secret. The API holds a client secret for Microsoft Graph in `AzureAd:ClientSecret`, and that value is a secret: keep it out of `appsettings.json` and the repository.
 
 | App | File | Section |
 | --- | --- | --- |
 | API | `andes-mailer-api/Andes.Mailer.Api/appsettings.json` | `AzureAd`: `Instance`, `TenantId`, `ClientId` |
+| API | User secrets | `AzureAd:ClientSecret` |
 | UI | `andes-mailer-ui/public/config.json` | `auth`: `clientId`, `authority`, `apiScopes` |
 
-- The API validates `AzureAd` on startup and refuses to start if `Instance` is not an absolute https URL or `TenantId` or `ClientId` is not a GUID. `appsettings.sample.json` shows the shape.
+- The API validates `AzureAd` on startup and refuses to start if `Instance` is not an absolute https URL or `TenantId` or `ClientId` is not a GUID. `appsettings.sample.json` shows the shape, including `ClientSecret`. The startup check does not look at `ClientSecret`: a missing secret surfaces only when something calls Graph.
+- `ClientSecret` needs the Graph application permission `User.Read.All` with admin consent. [Users and permissions](users-and-permissions.md#microsoft-graph-setup) has the steps and the `dotnet user-secrets` commands.
 - The UI fetches `config.json` at startup (`cache: 'no-store'`, 10-second timeout) and rejects a bad `clientId`, a non-https `authority`, or an empty `apiScopes`. On failure the page shows "Andes Mailer could not start."
 - `config.json` is not baked into the bundle, so each environment can replace it and one build can be promoted. Keep both files pointed at the same registration.
 
@@ -99,6 +103,7 @@ The Entra values are public identifiers. There is no client secret anywhere in e
 
 - **Redirect URI.** `http://localhost:4200/auth` must be registered as a **single-page application** redirect URI, so serve the UI on port 4200. If it is missing, sign-in fails with `AADSTS50011`. Entra matches the URI exactly.
 - **Exposed scope.** The registration exposes `access_as_user`, and `apiScopes` in `config.json` requests `api://<clientId>/access_as_user`.
+- **Graph permission.** The registration needs the Microsoft Graph **application** permission `User.Read.All`, with admin consent granted, and a credential (a client secret for local work). See [Users and permissions](users-and-permissions.md#microsoft-graph-setup).
 - **Other environments.** Each deployed environment needs its own `<origin>/auth` registered and its own `config.json` with the right values.
 
 ## Production host requirements
@@ -115,7 +120,8 @@ Both header rules come from MSAL's [redirect bridge documentation](https://raw.g
 
 - **No sign-out.** Because `authGuard` redirects automatically, a sign-out added later must land on a page that does not auto-redirect, or the user is signed straight back in.
 - **Shared app registration.** Both apps currently use the registration that `enterprise-gpt` uses, so a token issued for one app is accepted by the other's API. andes-mailer needs its own registration before production.
-- **Scalar cannot call protected endpoints.** `/scalar` lists `/api/users/me`, but it has no way to attach a token, so Try It returns 401.
+- **Scalar cannot call protected endpoints.** `/scalar` lists the `/api/users` endpoints, but it has no way to attach a token, so Try It returns 401.
+- **The API needs a secret.** The API cannot start Graph lookups without `AzureAd:ClientSecret`, which lives in user secrets, never in committed configuration. Because the registration is shared with `enterprise-gpt`, the secret and the `User.Read.All` consent apply to that app too, one more reason to give andes-mailer its own registration.
 
 ## Testing
 
