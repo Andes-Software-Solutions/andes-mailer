@@ -52,7 +52,7 @@ After changing code, run the matching reviewer on the diff: `andes-csharp-code-r
 | --- | --- |
 | `Andes.Mailer.Api/` | Host: `Program.cs`, exception handling, Problem Details, OpenAPI, health endpoints |
 | `Andes.Mailer.Service/` | Business logic; services query the `DbContext` directly |
-| `Andes.Mailer.Repository/Sql/` | SQL Server plumbing: `AndesMailerDbContext`, base configurations, interceptors, options, health probe |
+| `Andes.Mailer.Repository/Sql/` | SQL Server plumbing: `AndesMailerDbContext`, entity and base configurations, migrations, interceptors, options, health probe |
 | `Andes.Mailer.Entity/` | Plain entity classes |
 | `Andes.Mailer.Dto/` | Request and response DTOs |
 | `Andes.Mailer.Common/` | Enums, constants, options validation |
@@ -121,6 +121,9 @@ The UI listens on `http://localhost:4200` and forwards `/api/**` to `https://loc
 
 ## Conventions
 
-- **Authentication:** both apps use the Microsoft Entra app registration in `AzureAd` (`appsettings.json`) and `auth` (`andes-mailer-ui/public/config.json`). The API holds no client secret. Its default and fallback authorization policy requires the `access_as_user` scope, so every endpoint is protected unless it calls `.AllowAnonymous()`.
+- **Authentication:** both apps use the Microsoft Entra app registration in `AzureAd` (`appsettings.json`) and `auth` (`andes-mailer-ui/public/config.json`). Its default and fallback authorization policy requires the `access_as_user` scope, so every endpoint is protected unless it calls `.AllowAnonymous()`.
+- **Microsoft Graph:** the API calls Graph app-only (`User.Read.All` application permission) to look users up by email. The credential is `AzureAd:ClientSecret`, set in user secrets locally and never in committed config. Code reaches Graph only through `IDirectoryUserService`, which tests substitute.
+- **Users and permissions:** `[Core].[User].Id` is the Entra object id, so a token's `oid` claim is the user key. Endpoints that need a permission add `PermissionEndpointFilter`. Roles and permissions are the `Roles` and `Permissions` enums, mirrored by the `[Core.Ref]` tables; a grant changes only in `RoleGrantConfiguration` plus a new migration.
+- **Migrations:** run `dotnet ef` from `andes-mailer-api/` with `--project Andes.Mailer.Repository --startup-project Andes.Mailer.Api`, and add `--output-dir Sql/Migrations` to `migrations add`. Rows that operators may change later, such as the default administrator, go in as migration `InsertData`, not `HasData`.
 - **Sign-in in `andes-mailer-ui/`:** use `@azure/msal-browser` directly, not `@azure/msal-angular`. There is no login screen: `authGuard` redirects signed-out users to Entra. Guard every route except `login-failed`. `/auth`, the registered redirect URI, has no route because `src/main.ts` handles it before Angular boots. `http://localhost:4200/auth` must stay registered as a SPA redirect URI, so serve the UI on port 4200.
 - **Bootstrap in `andes-mailer-ui/`:** use the npm `bootstrap` and `@popperjs/core` packages, without ng-bootstrap. This overrides the `angular-ui-architecture` default. Import Bootstrap's JavaScript per component (`import { Dropdown } from 'bootstrap'`) rather than as a global script; create each instance in `afterNextRender` and call `dispose()` on destroy.

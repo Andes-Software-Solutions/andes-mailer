@@ -12,6 +12,7 @@ builder.Services.AddAndesMailerValidation();
 builder.Services.AddAndesMailerSqlPersistence(builder.Configuration);
 builder.Services.AddAndesMailerHealth();
 builder.Services.AddAndesMailerAuthentication(builder.Configuration);
+builder.Services.AddUsers();
 
 var app = builder.Build();
 
