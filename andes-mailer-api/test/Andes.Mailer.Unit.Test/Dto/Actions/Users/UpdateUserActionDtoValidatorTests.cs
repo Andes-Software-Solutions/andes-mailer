@@ -42,6 +42,8 @@ public sealed class UpdateUserActionDtoValidatorTests
     [Theory]
     [InlineData("")]
     [InlineData("not base64!")]
+    [InlineData("AA==")]
+    [InlineData("AAAAAAAAAAAA")]
     public void Validate_InvalidVersion_FailsOnVersion(string version)
     {
         var result = _validator.Validate(new UpdateUserActionDto("Ada", "Lovelace", version));

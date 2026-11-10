@@ -158,7 +158,7 @@ Only the name changes; the email comes from the directory and cannot be edited h
 | Status | When |
 | --- | --- |
 | 200 | The name was saved. The response holds the new `version`. |
-| 400 | `firstName` is empty or over 100 characters, `lastName` is missing or over 100 characters, or `version` is not base64. |
+| 400 | `firstName` is empty or over 100 characters, `lastName` is missing or over 100 characters, or `version` is not an 8-byte base64 row version. |
 | 403 | The caller lacks `ModifyUser`. |
 | 404 | No active user has that id. |
 | 409 | The `version` is stale. |
