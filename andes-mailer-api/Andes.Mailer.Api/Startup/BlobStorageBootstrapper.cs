@@ -3,7 +3,7 @@ using Andes.Mailer.Repository.Blob.Provisioning;
 namespace Andes.Mailer.Api.Startup;
 
 // Creates the blob containers in the background, retrying until storage answers. Like an unreachable database, unreachable storage must not
-// hold or stop the host: /health/ready reports it, and uploads fail with a message to retry until the containers exist.
+// hold or stop the host: /health/ready reports it, and the upload processor retries uploads that arrive before the containers exist.
 internal sealed partial class BlobStorageBootstrapper(BlobResourceProvisioner provisioner, ILogger<BlobStorageBootstrapper> logger) : BackgroundService
 {
     // Per attempt, so a black-holed endpoint costs seconds rather than the SDK's minutes of retries.
@@ -48,7 +48,7 @@ internal sealed partial class BlobStorageBootstrapper(BlobResourceProvisioner pr
 
     #region Logging
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Could not create the blob storage containers (attempt {Attempt}); retrying in {Delay}, and uploads fail until then")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "Could not create the blob storage containers (attempt {Attempt}); retrying in {Delay}; uploads retry meanwhile and fail if this lasts past their attempts")]
     private static partial void LogProvisioningFailed(ILogger logger, Exception exception, int attempt, TimeSpan delay);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Created the blob storage containers on attempt {Attempt}")]

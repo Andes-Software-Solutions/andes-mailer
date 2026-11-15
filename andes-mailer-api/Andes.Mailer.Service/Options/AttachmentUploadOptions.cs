@@ -41,6 +41,15 @@ public sealed class AttachmentUploadOptions
     public int QueueCapacity { get; init; } = 256;
 
     /// <summary>
+    /// Gets the number of times an upload is tried before it is marked failed. The default is 6.
+    /// </summary>
+    /// <remarks>
+    /// Retries wait 2 seconds, then twice as long each time up to 1 minute, so the default covers about a minute of storage being
+    /// unreachable, including the moments after startup before the container exists.
+    /// </remarks>
+    public int MaxUploadAttempts { get; init; } = 6;
+
+    /// <summary>
     /// Gets a value indicating whether the processor settles uploads the last shutdown interrupted when it starts. The default is <see langword="true"/>.
     /// </summary>
     /// <remarks>
@@ -53,7 +62,7 @@ public sealed class AttachmentUploadOptions
     /// Gets the staging directory with the default applied.
     /// </summary>
     public string ResolvedStagingPath =>
-        string.IsNullOrWhiteSpace(StagingPath) ? Path.Combine(Path.GetTempPath(), "andes-mailer", "attachments") : StagingPath;
+        string.IsNullOrWhiteSpace(StagingPath) ? Path.Join(Path.GetTempPath(), "andes-mailer", "attachments") : StagingPath;
 }
 
 /// <summary>
@@ -73,5 +82,6 @@ public sealed class AttachmentUploadOptionsValidator : AbstractValidator<Attachm
         RuleFor(o => o.MaxEmailBytes).GreaterThanOrEqualTo(o => o.MaxFileBytes);
         RuleFor(o => o.MaxConcurrency).InclusiveBetween(1, 64);
         RuleFor(o => o.QueueCapacity).InclusiveBetween(1, 10_000);
+        RuleFor(o => o.MaxUploadAttempts).InclusiveBetween(1, 20);
     }
 }

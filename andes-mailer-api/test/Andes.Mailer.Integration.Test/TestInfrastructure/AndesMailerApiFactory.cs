@@ -27,7 +27,7 @@ public sealed class AndesMailerApiFactory(
     private readonly Action<IServiceCollection>? _configureTestServices = configureTestServices;
 
     // Per factory, so hosts running side by side never recover or sweep each other's staged uploads.
-    private readonly string _stagingPath = Path.Combine(Path.GetTempPath(), "andes-mailer-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _stagingPath = Path.Join(Path.GetTempPath(), "andes-mailer-tests", Guid.NewGuid().ToString("N"));
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {

@@ -58,13 +58,13 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Process_StoreFails_MarksFailedAndKeepsProcessing()
+    public async Task Process_StoreFailsEveryAttempt_MarksFailedCleansUpAndKeepsProcessing()
     {
         var failing = await AddPendingAsync(staged: true);
         var next = await AddPendingAsync(staged: true);
         _store.UploadAsync(failing.BlobName, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new IOException("storage unreachable"));
-        using var processor = CreateProcessor();
+        using var processor = CreateProcessor(maxUploadAttempts: 2);
         await processor.StartAsync(TestContext.Current.CancellationToken);
 
         await _channel.EnqueueAsync(failing.Id, TestContext.Current.CancellationToken);
@@ -77,26 +77,93 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
         Assert.DoesNotContain("storage unreachable", failed.FailureReason, StringComparison.Ordinal);
         Assert.Equal(AttachmentStatuses.Uploaded, uploaded.StatusId);
         Assert.False(_staging.Exists(failing.Id));
+        await _store.Received(2).UploadAsync(failing.BlobName, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+
+        // The write may have landed even though it reported a failure, so the blob is removed too.
+        await _store.Received(1).DeleteIfExistsAsync(failing.BlobName, Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task Process_FaultOutsideUpload_KeepsConsumerAlive()
+    public async Task Process_TransientStoreFailure_KeepsStagedFileAndRetriesToUploaded()
     {
-        var next = await AddPendingAsync(staged: true);
+        var attachment = await AddPendingAsync(staged: true);
+        _store.UploadAsync(attachment.BlobName, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new IOException("container not found yet"), _ => Task.CompletedTask);
+        using var processor = CreateProcessor();
+        await processor.StartAsync(TestContext.Current.CancellationToken);
+
+        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => _store.ReceivedCalls().Any(c => c.GetMethodInfo().Name == nameof(IAttachmentStore.UploadAsync)));
+        var stagedAfterFailure = _staging.Exists(attachment.Id);
+        var uploaded = await WaitForStatusAsync(attachment.Id, AttachmentStatuses.Uploaded);
+        await processor.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(stagedAfterFailure);
+        Assert.Equal(AttachmentStatuses.Uploaded, uploaded.StatusId);
+        Assert.False(_staging.Exists(attachment.Id));
+        await _store.DidNotReceive().DeleteIfExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Process_DatabaseFaultBeforeUpload_RetriesToUploaded()
+    {
+        var attachment = await AddPendingAsync(staged: true);
         var calls = 0;
         await using var flaky = new ServiceCollection()
-            .AddScoped(_ => Interlocked.Increment(ref calls) == 1 ? throw new InvalidOperationException("store unavailable") : _fixture.CreateContext())
+            .AddScoped(_ => Interlocked.Increment(ref calls) == 1 ? throw new InvalidOperationException("database unavailable") : _fixture.CreateContext())
             .BuildServiceProvider();
         var options = Microsoft.Extensions.Options.Options.Create(new AttachmentUploadOptions { StagingPath = _directory.Path, MaxConcurrency = 1, RecoverOnStartup = false });
         using var processor = new AttachmentUploadProcessor(flaky.GetRequiredService<IServiceScopeFactory>(), _channel, _staging, _store, _fixture.Time, options, NullLogger<AttachmentUploadProcessor>.Instance);
         await processor.StartAsync(TestContext.Current.CancellationToken);
 
-        await _channel.EnqueueAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
-        await _channel.EnqueueAsync(next.Id, TestContext.Current.CancellationToken);
-        var uploaded = await WaitForStatusAsync(next.Id, AttachmentStatuses.Uploaded);
+        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        var uploaded = await WaitForStatusAsync(attachment.Id, AttachmentStatuses.Uploaded);
         await processor.StopAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(AttachmentStatuses.Uploaded, uploaded.StatusId);
+        Assert.True(calls >= 2);
+    }
+
+    [Fact]
+    public async Task Process_StagedFileMissing_FailsWithoutRetry()
+    {
+        var attachment = await AddPendingAsync(staged: false);
+        using var processor = CreateProcessor();
+        await processor.StartAsync(TestContext.Current.CancellationToken);
+
+        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        var failed = await WaitForStatusAsync(attachment.Id, AttachmentStatuses.Failed);
+        await processor.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AttachmentStatuses.Failed, failed.StatusId);
+        await _store.DidNotReceive().UploadAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Process_SameIdQueuedTwice_UploadsOnce()
+    {
+        var attachment = await AddPendingAsync(staged: true);
+        var uploadStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseUpload = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _store.UploadAsync(attachment.BlobName, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                uploadStarted.TrySetResult();
+                return releaseUpload.Task;
+            });
+        using var processor = CreateProcessor();
+        await processor.StartAsync(TestContext.Current.CancellationToken);
+
+        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        await uploadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(100), TestContext.Current.CancellationToken);
+        releaseUpload.SetResult();
+        var uploaded = await WaitForStatusAsync(attachment.Id, AttachmentStatuses.Uploaded);
+        await processor.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AttachmentStatuses.Uploaded, uploaded.StatusId);
+        await _store.Received(1).UploadAsync(attachment.BlobName, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -183,8 +250,14 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
         }
     }
 
-    private AttachmentUploadProcessor CreateProcessor() =>
-        new(_services.GetRequiredService<IServiceScopeFactory>(), _channel, _staging, _store, _fixture.Time, _options, NullLogger<AttachmentUploadProcessor>.Instance);
+    private AttachmentUploadProcessor CreateProcessor(int? maxUploadAttempts = null)
+    {
+        var options = maxUploadAttempts is { } attempts
+            ? Microsoft.Extensions.Options.Options.Create(new AttachmentUploadOptions { StagingPath = _directory.Path, MaxConcurrency = 2, MaxUploadAttempts = attempts })
+            : _options;
+
+        return new(_services.GetRequiredService<IServiceScopeFactory>(), _channel, _staging, _store, _fixture.Time, options, NullLogger<AttachmentUploadProcessor>.Instance);
+    }
 
     private async Task<EmailAttachment> AddPendingAsync(bool staged)
     {
@@ -222,6 +295,8 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
                 return attachment;
             }
 
+            // Retries wait on the fake clock, so time moves only as the test polls.
+            _fixture.Time.Advance(TimeSpan.FromSeconds(5));
             await Task.Delay(TimeSpan.FromMilliseconds(25), TestContext.Current.CancellationToken);
         }
 

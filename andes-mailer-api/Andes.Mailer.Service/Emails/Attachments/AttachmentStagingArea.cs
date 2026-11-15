@@ -95,7 +95,7 @@ public sealed class AttachmentStagingArea(IOptions<AttachmentUploadOptions> opti
     #region Private methods
 
     // The id alone, never the client's file name, so nothing the client sends can steer the path.
-    private string PathOf(Guid attachmentId) => Path.Combine(_directory, attachmentId.ToString("N"));
+    private string PathOf(Guid attachmentId) => Path.Join(_directory, attachmentId.ToString("N"));
 
     #endregion
 }

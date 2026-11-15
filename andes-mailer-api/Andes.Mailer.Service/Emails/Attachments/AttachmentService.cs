@@ -15,6 +15,7 @@ using FluentValidation;
 using FluentValidation.Results;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Andes.Mailer.Service.Emails.Attachments;
@@ -85,14 +86,16 @@ public interface IAttachmentService
 /// <param name="quotaLock">The lock that serializes the per-email size check.</param>
 /// <param name="time">The clock deactivation is stamped with.</param>
 /// <param name="options">The upload limits.</param>
-public sealed class AttachmentService(
+/// <param name="logger">The logger.</param>
+public sealed partial class AttachmentService(
     AndesMailerDbContext ctx,
     IAttachmentStore store,
     AttachmentStagingArea staging,
     AttachmentUploadChannel channel,
     AttachmentQuotaLock quotaLock,
     TimeProvider time,
-    IOptions<AttachmentUploadOptions> options) : IAttachmentService
+    IOptions<AttachmentUploadOptions> options,
+    ILogger<AttachmentService> logger) : IAttachmentService
 {
     // The multipart field name, so a client sees its validation errors against the field it sent.
     private const string FileField = "file";
@@ -107,6 +110,7 @@ public sealed class AttachmentService(
     private readonly AttachmentQuotaLock _quotaLock = quotaLock;
     private readonly TimeProvider _time = time;
     private readonly AttachmentUploadOptions _options = options.Value;
+    private readonly ILogger<AttachmentService> _logger = logger;
 
     /// <inheritdoc/>
     public async Task<EmailAttachmentDto> StageAsync(Guid emailId, Guid callerId, string fileName, long length, Stream content, CancellationToken cancellationToken)
@@ -128,6 +132,7 @@ public sealed class AttachmentService(
         var name = NormalizeFileName(fileName);
         var type = DocumentTypeDetector.FromFileName(name);
         ThrowIfInvalid(ValidateFile(name, type, length));
+        var documentType = type ?? throw new InvalidOperationException("ValidateFile accepts only file names with a known document type.");
 
         // An early check on the declared size, so an upload already over the cap is refused before it is copied to disk.
         ThrowIfInvalid(ValidateTotal(await UsedBytesAsync(emailId, cancellationToken), length));
@@ -138,8 +143,8 @@ public sealed class AttachmentService(
             Id = id,
             EmailId = emailId,
             FileName = name,
-            DocumentTypeId = type!.Value,
-            ContentType = DocumentTypeDetector.ContentTypeOf(type.Value),
+            DocumentTypeId = documentType,
+            ContentType = DocumentTypeDetector.ContentTypeOf(documentType),
             SizeBytes = length,
             BlobName = $"{emailId:N}/{id:N}",
             StatusId = AttachmentStatuses.Pending,
@@ -153,7 +158,7 @@ public sealed class AttachmentService(
             attachment.SizeBytes = written;
             ThrowIfInvalid(ValidateFile(name, type, written));
             var header = await _staging.ReadHeaderAsync(id, DocumentTypeDetector.HeaderLength, cancellationToken);
-            if (!DocumentTypeDetector.Detect(type.Value, header))
+            if (!DocumentTypeDetector.Detect(documentType, header))
             {
                 ThrowIfInvalid(["The file's content does not match its extension."]);
             }
@@ -224,6 +229,9 @@ public sealed class AttachmentService(
             throw new EmailNotEditableException();
         }
 
+        // The document goes first: if storage fails here the row is still visible, so the client can simply retry the removal.
+        await _store.DeleteIfExistsAsync(attachment.BlobName, cancellationToken);
+
         // A set-based update rather than a tracked remove: the background upload changes the row's version as it runs, and a removal must win
         // over it instead of failing on the concurrency check. The bumped version is what tells the upload the row was removed under it.
         var now = _time.GetUtcNow();
@@ -233,8 +241,18 @@ public sealed class AttachmentService(
                 s => s.SetProperty(a => a.DateDeactivated, now).SetProperty(a => a.DateModified, now),
                 cancellationToken);
 
-        // The row is already gone for the client, so a disconnect now must not leave the document behind.
-        await _store.DeleteIfExistsAsync(attachment.BlobName, CancellationToken.None);
+        // An upload that finished between the two steps above wrote the document again; an upload still running is cleaned up by
+        // the processor when its save hits the bumped version. Best effort: the removal has already succeeded for the client.
+        try
+        {
+            await _store.DeleteIfExistsAsync(attachment.BlobName, CancellationToken.None);
+        }
+#pragma warning disable CA1031 // The row is removed; a leftover document must not turn that into an error.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogBlobCleanupFailed(_logger, ex, attachmentId);
+        }
     }
 
     #region Private methods
@@ -297,6 +315,13 @@ public sealed class AttachmentService(
     }
 
     private static string ToMegabytes(long bytes) => (bytes / (double)Megabyte).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    #endregion
+
+    #region Logging
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Removed attachment {AttachmentId}, but could not delete its document; it may be left in storage")]
+    private static partial void LogBlobCleanupFailed(ILogger logger, Exception exception, Guid attachmentId);
 
     #endregion
 }

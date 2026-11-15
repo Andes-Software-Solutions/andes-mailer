@@ -241,20 +241,29 @@ request --> local disk --> row saved (Pending) --> bounded channel --> Attachmen
 
 1. `AttachmentService.StageAsync` writes the file to the staging directory, named by the attachment id and never by the client's file name, then saves the row as `Pending` and writes the id to the channel.
 2. The channel (`AttachmentUploadChannel`) holds up to `QueueCapacity` ids. When it is full, new uploads wait rather than grow memory without limit.
-3. `AttachmentUploadProcessor`, a hosted service, runs `MaxConcurrency` workers. Each marks the row `Uploading`, streams the staged file to the blob named `BlobName`, marks it `Uploaded`, and deletes the staged file.
-4. A failure marks the row `Failed` with the message "The document could not be stored. Remove it and upload it again." and logs the cause. One failed upload never stops the workers.
+3. `AttachmentUploadProcessor`, a hosted service, runs `MaxConcurrency` workers. Each marks the row `Uploading`, streams the staged file to the blob named `BlobName`, marks it `Uploaded`, and deletes the staged file. A second queued copy of an id a worker already holds is skipped, so two workers never race on one attachment.
+4. A storage or database fault is retried. The row stays `Pending` or `Uploading` and the staged file stays on disk. The wait before each retry starts at 2 seconds and doubles up to 1 minute. After `MaxUploadAttempts` tries (6 by default, about a minute of outage) the worker gives up: it deletes the blob the failed attempts may have written (best effort), marks the row `Failed` with the message "The document could not be stored. Remove it and upload it again.", removes the staged file, and logs the cause. The row is marked `Failed` only while it is still `Pending` or `Uploading`, so a failure never overwrites an upload that already finished.
+5. A staged file that is missing fails the upload at once, because the only copy of the document is gone and a retry cannot help.
 
-Staging on local disk first means the request can finish as soon as the file is safe, and a storage outage does not lose the user's upload: the file waits on disk until storage answers or recovery runs.
+One failed upload never stops the workers. Staging on local disk first means the request can finish as soon as the file is safe, and a short storage outage does not lose the user's upload: the file waits on disk while the retries run. An outage longer than the retries cover ends in `Failed`, and the user uploads the document again. The attempt count is kept in memory. A restart or shutdown leaves the row and the staged file, and [startup recovery](#startup-recovery) queues the upload again with a fresh count.
 
 ### Removing an attachment during an upload
 
 A user can remove an attachment at any point. The removal wins:
 
-- **Before the worker starts:** the worker finds no active row, deletes the staged file, and skips it.
-- **While it uploads:** the removal soft-deletes the row with a set-based update that bumps the row's version, then deletes the blob. When the worker saves `Uploaded`, the stale version makes the save fail, the worker sees the row is gone, and it deletes the blob it just wrote.
-- **After it uploaded:** the removal deletes the blob.
+The removal runs in three steps:
 
-If the row still exists but changed under the worker for another reason, the worker marks it `Failed` instead of leaving it in `Uploading`.
+1. It deletes the blob first. If storage fails here, the client gets an error and the attachment is still there, so the client can retry the removal.
+2. It soft-deletes the row with a set-based update that bumps the row's version.
+3. It deletes the blob once more, best effort, for an upload that finished between steps 1 and 2. A failure here is logged and does not fail the request, because the removal has already succeeded.
+
+What the worker does depends on when the removal lands:
+
+- **Before the worker starts:** the worker finds no active row, deletes the staged file, and skips it.
+- **While it uploads:** when the worker saves `Uploaded`, the stale version makes the save fail, the worker sees the row is gone, and it deletes the blob it just wrote.
+- **After it uploaded:** step 1 deletes the blob.
+
+If the row changed under the worker and still exists, the worker leaves a row that is `Uploaded` or `Failed` as it is, and retries the upload of one that is still pending.
 
 ### Startup recovery
 
@@ -264,7 +273,7 @@ If the process stops with uploads queued, the channel is lost but the rows and s
 - One whose staged file is gone is marked `Failed` with "The upload was interrupted. Remove the document and upload it again."
 - A staged file written before this start that matches no pending row is deleted: a removed attachment, or a request that crashed before its row was saved.
 
-Rows and files from after this start are left alone, because the requests that created them are queuing them already. Recovery is best effort: if it fails, it logs the error and the processor still takes new uploads.
+Rows and files from after this start are left alone, because the requests that created them are queuing them already. The cutoff time is taken in the processor's `StartAsync`, which runs during host startup before the server takes requests, so recovery never re-queues or sweeps an upload that a request in the same run queued. Recovery is best effort: if it fails, it logs the error and the processor still takes new uploads.
 
 ### Scaling out
 
@@ -288,7 +297,7 @@ Until the pipeline changes, run one instance. Before you scale out:
 | `BlobStorage:ConnectionString` | Required; the API refuses to start without it. Set it in user secrets, never in committed config. Use `UseDevelopmentStorage=true` locally with Azurite. |
 | `BlobStorage:AttachmentsContainer` | The container for documents. Default `attachments`. 3 to 63 lowercase letters, digits, or single hyphens, starting and ending with a letter or digit; a bad name fails at startup instead of on the first upload. |
 
-`BlobStorageBootstrapper`, a hosted service, creates the container in the background and retries with a growing delay (1 second up to 1 minute, 10 seconds per attempt) until storage answers. Like an unreachable database, unreachable storage does not stop or hold the host. Until the container exists, uploads fail and `/health/ready` reports the problem.
+`BlobStorageBootstrapper`, a hosted service, creates the container in the background and retries with a growing delay (1 second up to 1 minute, 10 seconds per attempt) until storage answers. Like an unreachable database, unreachable storage does not stop or hold the host. Until the container exists, `/health/ready` reports the problem. An upload accepted in that window is not lost: the worker's [retries](#the-background-pipeline) cover it, so it is stored once the container appears, as long as that happens within the retry window (about a minute with the default `MaxUploadAttempts`). A longer outage ends in `Failed`.
 
 `/health/ready` now has two checks, `sql` and `blob`. The `blob` check passes only when the attachments container exists, and gives up after 5 seconds. `/health/live` is unchanged.
 
@@ -303,6 +312,7 @@ The `AttachmentUpload` section is optional; each key has a default. The values a
 | `MaxEmailBytes` | 26214400 (25 MB) | The largest total per email. Must be at least `MaxFileBytes`. |
 | `MaxConcurrency` | 4 | Uploads at once, 1 to 64. |
 | `QueueCapacity` | 256 | Staged files that can wait for a worker, 1 to 10,000. |
+| `MaxUploadAttempts` | 6 | Tries per upload before it is marked `Failed`, 1 to 20. Retries wait 2 seconds, then twice as long each time up to 1 minute, so the default covers about a minute of storage being unreachable. |
 | `RecoverOnStartup` | `true` | Whether the processor settles interrupted uploads at start. See [Scaling out](#scaling-out). |
 
 ## Run it locally

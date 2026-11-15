@@ -26,7 +26,7 @@ public sealed class MailerDbFixture : IDisposable
         var builder = new DbContextOptionsBuilder<AndesMailerDbContext>();
         if (concurrent)
         {
-            _filePath = Path.Combine(Path.GetTempPath(), $"andes-mailer-unit-{Guid.NewGuid():N}.db");
+            _filePath = Path.Join(Path.GetTempPath(), $"andes-mailer-unit-{Guid.NewGuid():N}.db");
             builder.UseSqlite($"Data Source={_filePath}");
         }
         else

@@ -14,6 +14,7 @@ using Andes.Mailer.Unit.Test.TestInfrastructure;
 using FluentValidation;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 using NSubstitute;
@@ -165,10 +166,40 @@ public sealed class AttachmentServiceTests : IDisposable
 
         await CreateService(ctx).DeleteAsync(emailId, attachment.Id, senderId, TestContext.Current.CancellationToken);
 
-        await _store.Received(1).DeleteIfExistsAsync(attachment.BlobName, Arg.Any<CancellationToken>());
+        // Before hiding the row, and again after, for an upload that finished in between.
+        await _store.Received(2).DeleteIfExistsAsync(attachment.BlobName, Arg.Any<CancellationToken>());
         await using var readCtx = _fixture.CreateContext();
         var row = await readCtx.EmailAttachments.IgnoreQueryFilters().SingleAsync(a => a.Id == attachment.Id, TestContext.Current.CancellationToken);
         Assert.Equal(_fixture.Time.GetUtcNow(), row.DateDeactivated);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_StorageFails_LeavesRowVisibleSoTheRemovalCanBeRetried()
+    {
+        var attachment = Attachment(10, AttachmentStatuses.Uploaded);
+        var (senderId, emailId) = await AddDraftAsync(attachment);
+        _store.DeleteIfExistsAsync(attachment.BlobName, Arg.Any<CancellationToken>()).ThrowsAsync(new IOException("storage unreachable"));
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<IOException>(() => CreateService(ctx).DeleteAsync(emailId, attachment.Id, senderId, TestContext.Current.CancellationToken));
+
+        await using var readCtx = _fixture.CreateContext();
+        Assert.True(await readCtx.EmailAttachments.AnyAsync(a => a.Id == attachment.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task DeleteAsync_CleanupAfterRemovalFails_StillSucceeds()
+    {
+        var attachment = Attachment(10, AttachmentStatuses.Uploaded);
+        var (senderId, emailId) = await AddDraftAsync(attachment);
+        _store.DeleteIfExistsAsync(attachment.BlobName, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.CompletedTask, _ => throw new IOException("storage unreachable"));
+        await using var ctx = _fixture.CreateContext();
+
+        await CreateService(ctx).DeleteAsync(emailId, attachment.Id, senderId, TestContext.Current.CancellationToken);
+
+        await using var readCtx = _fixture.CreateContext();
+        Assert.False(await readCtx.EmailAttachments.AnyAsync(a => a.Id == attachment.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -243,7 +274,7 @@ public sealed class AttachmentServiceTests : IDisposable
         return (sender.Id, email.Id);
     }
 
-    private AttachmentService CreateService(AndesMailerDbContext ctx) => new(ctx, _store, _staging, _channel, _quotaLock, _fixture.Time, _options);
+    private AttachmentService CreateService(AndesMailerDbContext ctx) => new(ctx, _store, _staging, _channel, _quotaLock, _fixture.Time, _options, NullLogger<AttachmentService>.Instance);
 
     private async Task<EmailAttachmentDto> StageAsync(AndesMailerDbContext ctx, Guid emailId, Guid callerId, string fileName, byte[] content)
     {

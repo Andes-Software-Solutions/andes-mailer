@@ -38,6 +38,16 @@ public sealed class AttachmentUploadOptionsValidatorTests
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(AttachmentUploadOptions.MaxConcurrency));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(21)]
+    public void Validate_UploadAttemptsOutOfRange_Fails(int attempts)
+    {
+        var result = _validator.Validate(new AttachmentUploadOptions { MaxUploadAttempts = attempts });
+
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AttachmentUploadOptions.MaxUploadAttempts));
+    }
+
     [Fact]
     public void ResolvedStagingPath_Empty_UsesTempDirectory()
     {

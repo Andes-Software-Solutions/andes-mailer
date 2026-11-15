@@ -166,7 +166,7 @@ public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fi
         using var deleted = await client.DeleteAsync(upload.Headers.Location, TestContext.Current.CancellationToken);
         releaseUpload.SetResult();
         var blobName = $"{email.Id:N}/{accepted!.Id:N}";
-        for (var attempt = 0; attempt < 120 && store.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IAttachmentStore.DeleteIfExistsAsync)) < 2; attempt++)
+        for (var attempt = 0; attempt < 120 && store.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IAttachmentStore.DeleteIfExistsAsync)) < 3; attempt++)
         {
             await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
         }
@@ -180,8 +180,8 @@ public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fi
         Assert.NotNull(row.DateDeactivated);
         Assert.NotEqual(AttachmentStatuses.Uploaded, row.StatusId);
 
-        // Once by the removal itself, once by the processor when its save found the row changed under it.
-        await store.Received(2).DeleteIfExistsAsync(blobName, Arg.Any<CancellationToken>());
+        // Twice by the removal (before and after hiding the row), once by the processor when its save found the row changed under it.
+        await store.Received(3).DeleteIfExistsAsync(blobName, Arg.Any<CancellationToken>());
     }
 
     #region Private methods
