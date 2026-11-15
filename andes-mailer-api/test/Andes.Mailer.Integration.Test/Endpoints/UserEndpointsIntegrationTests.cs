@@ -17,7 +17,7 @@ using NSubstitute;
 
 namespace Andes.Mailer.Integration.Test.Endpoints;
 
-public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture)
+public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture, AzuriteFixture azurite)
 {
     private const string ProblemJson = "application/problem+json";
     private const string UsersPath = "/api/users";
@@ -25,12 +25,13 @@ public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture)
     private const string UnknownPath = "/unknown";
 
     private readonly SqlServerFixture _fixture = fixture;
+    private readonly AzuriteFixture _azurite = azurite;
     private readonly IDirectoryUserService _directory = Substitute.For<IDirectoryUserService>();
 
     [Fact]
     public async Task GetMe_NoToken_ReturnsUnauthorizedProblem()
     {
-        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString);
+        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, _azurite.ConnectionString);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync(new Uri(MePath, UriKind.Relative), TestContext.Current.CancellationToken);
@@ -43,7 +44,7 @@ public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture)
     [Fact]
     public async Task GetUnknownRoute_NoToken_ReturnsUnauthorized()
     {
-        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString);
+        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, _azurite.ConnectionString);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync(new Uri(UnknownPath, UriKind.Relative), TestContext.Current.CancellationToken);
@@ -54,7 +55,7 @@ public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture)
     [Fact]
     public async Task GetMe_TokenWithoutRequiredScope_ReturnsForbiddenProblem()
     {
-        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, useTestAuthentication: true);
+        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, _azurite.ConnectionString, useTestAuthentication: true);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.ScopesHeader, "other_scope");
 
@@ -67,7 +68,7 @@ public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture)
     [Fact]
     public async Task GetMe_TokenWithRequiredScope_ReturnsCurrentUser()
     {
-        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, useTestAuthentication: true);
+        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, _azurite.ConnectionString, useTestAuthentication: true);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.ScopesHeader, ApiScopes.AccessAsUser);
 
@@ -248,6 +249,7 @@ public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture)
 
     private AndesMailerApiFactory CreateFactory() => new(
         _fixture.ConnectionString,
+        _azurite.ConnectionString,
         useTestAuthentication: true,
         configureTestServices: services => services.AddScoped(_ => _directory));
 

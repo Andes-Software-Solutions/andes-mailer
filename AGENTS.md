@@ -53,11 +53,12 @@ After changing code, run the matching reviewer on the diff: `andes-csharp-code-r
 | `Andes.Mailer.Api/` | Host: `Program.cs`, exception handling, Problem Details, OpenAPI, health endpoints |
 | `Andes.Mailer.Service/` | Business logic; services query the `DbContext` directly |
 | `Andes.Mailer.Repository/Sql/` | SQL Server plumbing: `AndesMailerDbContext`, entity and base configurations, migrations, interceptors, options, health probe |
+| `Andes.Mailer.Repository/Blob/` | Azure Blob Storage plumbing: `IAttachmentStore` gateway, options, container provisioner, health probe |
 | `Andes.Mailer.Entity/` | Plain entity classes |
 | `Andes.Mailer.Dto/` | Request and response DTOs |
 | `Andes.Mailer.Common/` | Enums, constants, options validation |
 | `test/Andes.Mailer.Unit.Test/` | Unit tests; no Docker needed |
-| `test/Andes.Mailer.Integration.Test/` | Host tests against a SQL Server 2025 container |
+| `test/Andes.Mailer.Integration.Test/` | Host tests against a SQL Server 2025 container and an Azurite container |
 
 `andes-mailer-ui/` holds the Angular 22 workspace, laid out per `angular-ui-architecture`:
 
@@ -75,7 +76,7 @@ After changing code, run the matching reviewer on the diff: `andes-csharp-code-r
 
 ### API
 
-Run these from `andes-mailer-api/`. `dotnet test` needs Docker running; the integration suite starts the `2025-CU9-ubuntu-24.04` SQL Server image.
+Run these from `andes-mailer-api/`. `dotnet test` needs Docker running; the integration suite starts the `2025-CU9-ubuntu-24.04` SQL Server image and the `azurite:3.37.0` Blob emulator.
 
 ```bash
 dotnet build
@@ -90,15 +91,17 @@ To run the API locally against the default `MSSQLSERVER` instance, once per mach
 ```bash
 sqlcmd -S localhost -E -C -Q "CREATE DATABASE AndesMailer"
 dotnet user-secrets set "SqlDb:ConnectionString" "Server=localhost;Database=AndesMailer;Integrated Security=True;TrustServerCertificate=True" --project Andes.Mailer.Api
+dotnet user-secrets set "BlobStorage:ConnectionString" "UseDevelopmentStorage=true" --project Andes.Mailer.Api
 ```
 
-Then:
+Then start the Blob emulator and the API:
 
 ```bash
+docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck
 dotnet run --project Andes.Mailer.Api
 ```
 
-The `http` profile listens on `http://localhost:5145`. `/health/live` reports the host and `/health/ready` reports the database; `/scalar` serves the API reference in Development. The API refuses to start without `SqlDb:ConnectionString`, and `dotnet ef` needs it too because it starts the host.
+The `http` profile listens on `http://localhost:5145`. `/health/live` reports the host and `/health/ready` reports the database and blob storage; `/scalar` serves the API reference in Development. The API refuses to start without `SqlDb:ConnectionString` or `BlobStorage:ConnectionString`, and `dotnet ef` needs both too because it starts the host.
 
 ### UI
 
@@ -124,6 +127,8 @@ The UI listens on `http://localhost:4200` and forwards `/api/**` to `https://loc
 - **Authentication:** both apps use the Microsoft Entra app registration in `AzureAd` (`appsettings.json`) and `auth` (`andes-mailer-ui/public/config.json`). Its default and fallback authorization policy requires the `access_as_user` scope, so every endpoint is protected unless it calls `.AllowAnonymous()`.
 - **Microsoft Graph:** the API calls Graph app-only (`User.Read.All` application permission) to look users up by email. The credential is `AzureAd:ClientSecret`, set in user secrets locally and never in committed config. Code reaches Graph only through `IDirectoryUserService`, which tests substitute.
 - **Users and permissions:** `[Core].[User].Id` is the Entra object id, so a token's `oid` claim is the user key. Endpoints that need a permission add `PermissionEndpointFilter`. Roles and permissions are the `Roles` and `Permissions` enums, mirrored by the `[Core.Ref]` tables; a grant changes only in `RoleGrantConfiguration` plus a new migration.
+- **Emails and attachments:** an email is a draft scoped to its sender; any other caller gets 404. Attachments upload in the background: the request stages the file on local disk and returns 202, `AttachmentUploadProcessor` pushes it to the `attachments` container, and clients poll the attachment's status. Uploading or removing one needs `CanAttachDocuments`. Local staging and startup recovery assume a single API instance; set `AttachmentUpload:RecoverOnStartup` to `false` on any instance that shares the database with another, as the integration factory does.
+- **Blob storage:** the connection string is `BlobStorage:ConnectionString`, set in user secrets locally and never in committed config. Code reaches Blob only through `IAttachmentStore`, which tests substitute. Enums go over the wire by name (`JsonStringEnumConverter`).
 - **Migrations:** run `dotnet ef` from `andes-mailer-api/` with `--project Andes.Mailer.Repository --startup-project Andes.Mailer.Api`, and add `--output-dir Sql/Migrations` to `migrations add`. Rows that operators may change later, such as the default administrator, go in as migration `InsertData`, not `HasData`.
 - **Sign-in in `andes-mailer-ui/`:** use `@azure/msal-browser` directly, not `@azure/msal-angular`. There is no login screen: `authGuard` redirects signed-out users to Entra. Guard every route except `login-failed`. `/auth`, the registered redirect URI, has no route because `src/main.ts` handles it before Angular boots. `http://localhost:4200/auth` must stay registered as a SPA redirect URI, so serve the UI on port 4200.
 - **Bootstrap in `andes-mailer-ui/`:** use the npm `bootstrap` and `@popperjs/core` packages, without ng-bootstrap. This overrides the `angular-ui-architecture` default. Import Bootstrap's JavaScript per component (`import { Dropdown } from 'bootstrap'`) rather than as a global script; create each instance in `afterNextRender` and call `dispose()` on destroy.

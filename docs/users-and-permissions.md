@@ -1,6 +1,6 @@
 # Users and permissions
 
-Signing in with Entra proves who someone is; it says nothing about what they may do. The API keeps its own list of users, gives them roles, and checks a permission before each change to that list. This page covers the data model, the `/api/users` endpoints, how permission checks work, and the Microsoft Graph setup that adding a user needs. For how tokens are issued and validated, see [Authentication](authentication.md).
+Signing in with Entra proves who someone is; it says nothing about what they may do. The API keeps its own list of users, gives them roles, and checks a permission before each change to that list, and before a document is attached to an email. This page covers the data model, the `/api/users` endpoints, how permission checks work, and the Microsoft Graph setup that adding a user needs. For how tokens are issued and validated, see [Authentication](authentication.md). For the endpoints that check `CanAttachDocuments`, see [Emails and attachments](emails-and-attachments.md).
 
 ## How it fits together
 
@@ -42,8 +42,8 @@ Queries on `User` and `UserRole` hide deactivated rows by default (the `Deactiva
 
 | Role | Id | Permissions |
 | --- | --- | --- |
-| `Administrator` | 1 | All six |
-| `TeamAdministrator` | 2 | `CreateTeamUser`, `ModifyTeamUser`, `DeactivateTeamUser` |
+| `Administrator` | 1 | All seven |
+| `TeamAdministrator` | 2 | `CreateTeamUser`, `ModifyTeamUser`, `DeactivateTeamUser`, `CanAttachDocuments` |
 
 | Permission | Id | Checked by |
 | --- | --- | --- |
@@ -53,6 +53,9 @@ Queries on `User` and `UserRole` hide deactivated rows by default (the `Deactiva
 | `CreateTeamUser` | 4 | Nothing yet |
 | `ModifyTeamUser` | 5 | Nothing yet |
 | `DeactivateTeamUser` | 6 | Nothing yet |
+| `CanAttachDocuments` | 7 | `POST` and `DELETE` on `/api/emails/{emailId}/attachments`: uploading a document to a draft and removing one |
+
+`CanAttachDocuments` guards only the two attachment writes. Reading, downloading, and every other email route need no permission, because an email is visible only to its sender anyway. The migration `*_AddEmailsAndAttachments.cs` adds the permission and both role grants. A user with no role, such as one you just added or reactivated, cannot attach documents until someone grants a role. See [Emails and attachments](emails-and-attachments.md#attachments).
 
 The enums are `Roles` and `Permissions` in `Andes.Mailer.Common/Enums/`. The reference rows belong to the code, not to operators: they are seeded with `HasData`, so a change to a role's permissions ships as a new migration.
 
@@ -221,6 +224,6 @@ dotnet ef database update --project Andes.Mailer.Repository --startup-project An
 ## Known limitations
 
 - **No role management.** No endpoint grants or revokes roles. Until one exists, change `[Core].[UserRole]` with SQL. A reactivated user starts with no roles, so an administrator has to re-grant them the same way.
-- **Team permissions do nothing yet.** Teams do not exist, so `CreateTeamUser`, `ModifyTeamUser`, and `DeactivateTeamUser` and the `TeamAdministrator` role are seeded, but no endpoint checks them.
+- **Team permissions do nothing yet.** Teams do not exist, so `CreateTeamUser`, `ModifyTeamUser`, and `DeactivateTeamUser` are seeded, but no endpoint checks them. The `TeamAdministrator` role holds only these three and `CanAttachDocuments`, so today its one working grant is `CanAttachDocuments`.
 - **Graph failures return 500.** A Graph outage, a missing consent, or a bad credential surfaces as a 500 from `POST /api/users`, not a specific error. The cause is in the API logs.
 - **No UI.** The UI calls only `GET /api/users/me`; it has no screens for the other endpoints yet.

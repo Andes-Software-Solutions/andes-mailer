@@ -42,4 +42,10 @@ public enum Permissions
     /// </summary>
     [Description("Deactivates a team's user")]
     DeactivateTeamUser = 6,
+
+    /// <summary>
+    /// Uploads documents to, and removes them from, an email.
+    /// </summary>
+    [Description("Uploads documents to, and removes them from, an email")]
+    CanAttachDocuments = 7,
 }

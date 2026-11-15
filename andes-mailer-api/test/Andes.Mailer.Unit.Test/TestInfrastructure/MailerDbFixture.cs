@@ -1,4 +1,5 @@
 using Andes.Mailer.Common.Enums;
+using Andes.Mailer.Entity.Emails;
 using Andes.Mailer.Entity.Users;
 using Andes.Mailer.Repository.Sql.DbContexts;
 using Andes.Mailer.Repository.Sql.Interceptors;
@@ -11,18 +12,32 @@ using Microsoft.Extensions.Time.Testing;
 namespace Andes.Mailer.Unit.Test.TestInfrastructure;
 
 // SQLite instead of Testcontainers keeps the Unit.Test suite free of Docker. Schemas are ignored and rowversion is emulated
-// (SqliteRowVersionModelCustomizer); behaviour that depends on SQL Server is covered by the integration suite.
+// (SqliteModelCustomizer), and DateTimeOffset is stored as a number; behaviour that depends on SQL Server is covered by the integration suite.
 public sealed class MailerDbFixture : IDisposable
 {
-    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly SqliteConnection? _connection;
+    private readonly string? _filePath;
     private readonly DbContextOptions<AndesMailerDbContext> _options;
 
-    public MailerDbFixture()
+    // concurrent: for code that runs contexts on several threads at once, such as a background service. A file database gives each
+    // context its own connection, because one shared in-memory connection is not thread-safe.
+    public MailerDbFixture(bool concurrent = false)
     {
-        _connection.Open();
-        _options = new DbContextOptionsBuilder<AndesMailerDbContext>()
-            .UseSqlite(_connection)
-            .ReplaceService<IModelCustomizer, SqliteRowVersionModelCustomizer>()
+        var builder = new DbContextOptionsBuilder<AndesMailerDbContext>();
+        if (concurrent)
+        {
+            _filePath = Path.Join(Path.GetTempPath(), $"andes-mailer-unit-{Guid.NewGuid():N}.db");
+            builder.UseSqlite($"Data Source={_filePath}");
+        }
+        else
+        {
+            _connection = new SqliteConnection("DataSource=:memory:");
+            _connection.Open();
+            builder.UseSqlite(_connection);
+        }
+
+        _options = builder
+            .ReplaceService<IModelCustomizer, SqliteModelCustomizer>()
             .AddInterceptors(new DeactivationInterceptor(Time), new AuditTimestampInterceptor(Time))
             .Options;
 
@@ -49,6 +64,21 @@ public sealed class MailerDbFixture : IDisposable
         return user;
     }
 
+    public async Task<Email> AddEmailAsync(Guid senderId, EmailStatuses status = EmailStatuses.Draft, params EmailAttachment[] attachments)
+    {
+        await using var ctx = CreateContext();
+        var email = new Email { SenderId = senderId, Subject = "Report", BodyHtml = "<p>Hi</p>", StatusId = status };
+        foreach (var attachment in attachments)
+        {
+            email.Attachments.Add(attachment);
+        }
+
+        ctx.Add(email);
+        await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        return email;
+    }
+
     public async Task DeactivateUserAsync(Guid id)
     {
         await using var ctx = CreateContext();
@@ -57,5 +87,14 @@ public sealed class MailerDbFixture : IDisposable
         await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose()
+    {
+        _connection?.Dispose();
+        if (_filePath is not null)
+        {
+            // Pooled connections keep the file open on Windows.
+            SqliteConnection.ClearAllPools();
+            File.Delete(_filePath);
+        }
+    }
 }

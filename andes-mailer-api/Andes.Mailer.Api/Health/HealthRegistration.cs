@@ -1,3 +1,4 @@
+using Andes.Mailer.Repository.Blob;
 using Andes.Mailer.Repository.Sql;
 
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -10,15 +11,19 @@ internal static class HealthRegistration
     private const string ReadyPath = "/health/ready";
     private const string ReadyTag = "ready";
     private const string SqlCheckName = "sql";
+    private const string BlobCheckName = "blob";
 
-    // Connection retries can run far longer than a readiness probe waits, so the check gives up first.
+    // Connection retries can run far longer than a readiness probe waits, so each check gives up first.
     private static readonly TimeSpan _sqlCheckTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan _blobCheckTimeout = TimeSpan.FromSeconds(5);
 
     #region Public static methods
 
     public static IServiceCollection AddAndesMailerHealth(this IServiceCollection services)
     {
-        services.AddHealthChecks().AddAndesMailerSqlHealthCheck(SqlCheckName, [ReadyTag], _sqlCheckTimeout);
+        services.AddHealthChecks()
+            .AddAndesMailerSqlHealthCheck(SqlCheckName, [ReadyTag], _sqlCheckTimeout)
+            .AddAndesMailerBlobHealthCheck(BlobCheckName, [ReadyTag], _blobCheckTimeout);
 
         return services;
     }
