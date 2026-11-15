@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Andes.Mailer.Integration.Test.Endpoints;
 
-public sealed class ProblemDetailsIntegrationTests(SqlServerFixture fixture)
+public sealed class ProblemDetailsIntegrationTests(SqlServerFixture fixture, AzuriteFixture azurite)
 {
     private const string ProblemJson = "application/problem+json";
     private const string NotFoundType = "https://tools.ietf.org/html/rfc9110#section-15.5.5";
@@ -18,11 +18,12 @@ public sealed class ProblemDetailsIntegrationTests(SqlServerFixture fixture)
     private const string UnknownPath = "/unknown";
 
     private readonly SqlServerFixture _fixture = fixture;
+    private readonly AzuriteFixture _azurite = azurite;
 
     [Fact]
     public async Task Get_UnknownRoute_ReturnsNotFoundProblem()
     {
-        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, useTestAuthentication: true);
+        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, _azurite.ConnectionString, useTestAuthentication: true);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.ScopesHeader, ApiScopes.AccessAsUser);
 
@@ -39,7 +40,7 @@ public sealed class ProblemDetailsIntegrationTests(SqlServerFixture fixture)
     [Fact]
     public async Task Get_UnhandledException_ReturnsUnexpectedProblemWithoutDetail()
     {
-        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, useTestAuthentication: true);
+        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, _azurite.ConnectionString, useTestAuthentication: true);
         await using var throwingFactory = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
             services.AddSingleton<IStartupFilter, ThrowingEndpointStartupFilter>()));
         using var client = throwingFactory.CreateClient();

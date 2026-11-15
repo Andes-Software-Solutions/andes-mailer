@@ -1,3 +1,4 @@
+using Andes.Mailer.Entity.Emails;
 using Andes.Mailer.Entity.Users;
 
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,21 @@ public sealed class AndesMailerDbContext(DbContextOptions<AndesMailerDbContext> 
     /// Gets the permissions granted to roles.
     /// </summary>
     public DbSet<RoleGrant> RoleGrants => Set<RoleGrant>();
+
+    /// <summary>
+    /// Gets the emails.
+    /// </summary>
+    public DbSet<Email> Emails => Set<Email>();
+
+    /// <summary>
+    /// Gets the recipients of emails.
+    /// </summary>
+    public DbSet<EmailRecipient> EmailRecipients => Set<EmailRecipient>();
+
+    /// <summary>
+    /// Gets the attachments of emails.
+    /// </summary>
+    public DbSet<EmailAttachment> EmailAttachments => Set<EmailAttachment>();
 
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>

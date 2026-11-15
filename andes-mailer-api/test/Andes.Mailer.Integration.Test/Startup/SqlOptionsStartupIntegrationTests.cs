@@ -5,12 +5,14 @@ using Microsoft.Extensions.Options;
 
 namespace Andes.Mailer.Integration.Test.Startup;
 
-public sealed class SqlOptionsStartupIntegrationTests
+public sealed class SqlOptionsStartupIntegrationTests(AzuriteFixture azurite)
 {
+    private readonly AzuriteFixture _azurite = azurite;
+
     [Fact]
     public async Task Start_EmptyConnectionString_RefusesToStart()
     {
-        await using var factory = new AndesMailerApiFactory(string.Empty);
+        await using var factory = new AndesMailerApiFactory(string.Empty, _azurite.ConnectionString);
 
         var exception = Assert.Throws<OptionsValidationException>(() => factory.Server);
 

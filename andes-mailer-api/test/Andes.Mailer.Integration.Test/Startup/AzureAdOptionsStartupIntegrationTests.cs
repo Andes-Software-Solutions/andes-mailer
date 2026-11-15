@@ -5,15 +5,17 @@ using Microsoft.Extensions.Options;
 
 namespace Andes.Mailer.Integration.Test.Startup;
 
-public sealed class AzureAdOptionsStartupIntegrationTests(SqlServerFixture fixture)
+public sealed class AzureAdOptionsStartupIntegrationTests(SqlServerFixture fixture, AzuriteFixture azurite)
 {
     private readonly SqlServerFixture _fixture = fixture;
+    private readonly AzuriteFixture _azurite = azurite;
 
     [Fact]
     public async Task Start_EmptyClientId_RefusesToStart()
     {
         await using var factory = new AndesMailerApiFactory(
             _fixture.ConnectionString,
+            _azurite.ConnectionString,
             configuration: new Dictionary<string, string?>
             {
                 [$"{AzureAdOptions.SectionName}:{nameof(AzureAdOptions.ClientId)}"] = string.Empty,

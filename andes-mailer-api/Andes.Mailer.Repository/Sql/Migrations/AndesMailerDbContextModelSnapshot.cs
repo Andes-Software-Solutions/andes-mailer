@@ -22,6 +22,347 @@ namespace Andes.Mailer.Repository.Sql.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.AttachmentStatus", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("AttachmentStatus", "Core.Ref");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Description = "Received and waiting to be stored",
+                            Name = "Pending"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Description = "Being written to storage",
+                            Name = "Uploading"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Description = "Stored and ready to download",
+                            Name = "Uploaded"
+                        },
+                        new
+                        {
+                            Id = 4,
+                            Description = "Could not be stored",
+                            Name = "Failed"
+                        });
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.DocumentType", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("DocumentType", "Core.Ref");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Description = "PDF document (.pdf)",
+                            Name = "Pdf"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Description = "Word document (.docx)",
+                            Name = "Docx"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Description = "PowerPoint presentation (.pptx)",
+                            Name = "Pptx"
+                        },
+                        new
+                        {
+                            Id = 4,
+                            Description = "PNG image (.png)",
+                            Name = "Png"
+                        },
+                        new
+                        {
+                            Id = 5,
+                            Description = "JPEG image (.jpg, .jpeg)",
+                            Name = "Jpeg"
+                        },
+                        new
+                        {
+                            Id = 6,
+                            Description = "GIF image (.gif)",
+                            Name = "Gif"
+                        },
+                        new
+                        {
+                            Id = 7,
+                            Description = "WebP image (.webp)",
+                            Name = "Webp"
+                        });
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.Email", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BodyHtml")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("DateCreated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateDeactivated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateModified")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SenderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("StatusId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DateDeactivated");
+
+                    b.HasIndex("StatusId");
+
+                    b.HasIndex("SenderId", "StatusId");
+
+                    b.ToTable("Email", "Core");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.EmailAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BlobName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(127)
+                        .HasColumnType("nvarchar(127)");
+
+                    b.Property<DateTimeOffset>("DateCreated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateDeactivated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateModified")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DocumentTypeId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("EmailId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("StatusId")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DateDeactivated");
+
+                    b.HasIndex("DocumentTypeId");
+
+                    b.HasIndex("EmailId");
+
+                    b.HasIndex("StatusId");
+
+                    b.ToTable("EmailAttachment", "Core");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.EmailRecipient", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("EmailId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RecipientTypeId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecipientTypeId");
+
+                    b.HasIndex("EmailId", "Address")
+                        .IsUnique();
+
+                    b.ToTable("EmailRecipient", "Core");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.EmailStatus", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("EmailStatus", "Core.Ref");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Description = "Being composed",
+                            Name = "Draft"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Description = "Sent; reserved until sending is built",
+                            Name = "Sent"
+                        });
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.RecipientType", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("RecipientType", "Core.Ref");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Description = "Primary recipient",
+                            Name = "To"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Description = "Copied recipient",
+                            Name = "Cc"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Description = "Blind-copied recipient",
+                            Name = "Bcc"
+                        });
+                });
+
             modelBuilder.Entity("Andes.Mailer.Entity.Users.PermissionType", b =>
                 {
                     b.Property<int>("Id")
@@ -79,6 +420,12 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                             Id = 6,
                             Description = "Deactivates a team's user",
                             Name = "DeactivateTeamUser"
+                        },
+                        new
+                        {
+                            Id = 7,
+                            Description = "Uploads documents to, and removes them from, an email",
+                            Name = "CanAttachDocuments"
                         });
                 });
 
@@ -165,6 +512,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         },
                         new
                         {
+                            RoleId = 1,
+                            PermissionId = 7
+                        },
+                        new
+                        {
                             RoleId = 2,
                             PermissionId = 4
                         },
@@ -177,6 +529,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         {
                             RoleId = 2,
                             PermissionId = 6
+                        },
+                        new
+                        {
+                            RoleId = 2,
+                            PermissionId = 7
                         });
                 });
 
@@ -241,6 +598,71 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.ToTable("UserRole", "Core");
                 });
 
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.Email", b =>
+                {
+                    b.HasOne("Andes.Mailer.Entity.Users.User", "Sender")
+                        .WithMany()
+                        .HasForeignKey("SenderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Emails.EmailStatus", "Status")
+                        .WithMany()
+                        .HasForeignKey("StatusId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Sender");
+
+                    b.Navigation("Status");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.EmailAttachment", b =>
+                {
+                    b.HasOne("Andes.Mailer.Entity.Emails.DocumentType", "DocumentType")
+                        .WithMany()
+                        .HasForeignKey("DocumentTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Emails.Email", "Email")
+                        .WithMany("Attachments")
+                        .HasForeignKey("EmailId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Emails.AttachmentStatus", "Status")
+                        .WithMany()
+                        .HasForeignKey("StatusId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("DocumentType");
+
+                    b.Navigation("Email");
+
+                    b.Navigation("Status");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.EmailRecipient", b =>
+                {
+                    b.HasOne("Andes.Mailer.Entity.Emails.Email", "Email")
+                        .WithMany("Recipients")
+                        .HasForeignKey("EmailId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Emails.RecipientType", "RecipientType")
+                        .WithMany()
+                        .HasForeignKey("RecipientTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Email");
+
+                    b.Navigation("RecipientType");
+                });
+
             modelBuilder.Entity("Andes.Mailer.Entity.Users.RoleGrant", b =>
                 {
                     b.HasOne("Andes.Mailer.Entity.Users.PermissionType", "PermissionType")
@@ -277,6 +699,13 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.Navigation("Role");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.Email", b =>
+                {
+                    b.Navigation("Attachments");
+
+                    b.Navigation("Recipients");
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Users.User", b =>

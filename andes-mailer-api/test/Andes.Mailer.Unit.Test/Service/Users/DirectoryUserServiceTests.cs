@@ -65,6 +65,40 @@ public sealed class DirectoryUserServiceTests
         Assert.Contains("mail eq 'o''brien@contoso.com' or userPrincipalName eq 'o''brien@contoso.com'", query, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task FindByEmailsAsync_AccountsMatchedByMailOrSignInName_KeysThemByRequestedAddress()
+    {
+        var externalId = Guid.NewGuid();
+        using var handler = new StubHttpMessageHandler(Accounts(
+            $$"""{ "id": "{{_accountId}}", "givenName": "Grace", "surname": "Hopper", "mail": "Grace@Contoso.com", "userPrincipalName": "grace@contoso.onmicrosoft.com" }""",
+            $$"""{ "id": "{{externalId}}", "displayName": "Amy", "mail": null, "userPrincipalName": "amy@contoso.com" }"""));
+        using var http = new HttpClient(handler, disposeHandler: false);
+        using var graph = new GraphServiceClient(http, new AnonymousAuthenticationProvider());
+
+        var found = await new DirectoryUserService(graph).FindByEmailsAsync(
+            [" GRACE@contoso.com ", "amy@contoso.com", "nobody@external.org"],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(["amy@contoso.com", "grace@contoso.com"], found.Keys.Order());
+        Assert.Equal(new DirectoryUser(_accountId, "Grace", "Hopper", "grace@contoso.com"), found["grace@contoso.com"]);
+        Assert.Equal(externalId, found["amy@contoso.com"].Id);
+        var query = Uri.UnescapeDataString(handler.LastRequestUri!.Query);
+        Assert.Contains("mail in ('grace@contoso.com', 'amy@contoso.com', 'nobody@external.org') or userPrincipalName in (", query, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FindByEmailsAsync_NoAddresses_MakesNoRequest()
+    {
+        using var handler = new StubHttpMessageHandler(Accounts());
+        using var http = new HttpClient(handler, disposeHandler: false);
+        using var graph = new GraphServiceClient(http, new AnonymousAuthenticationProvider());
+
+        var found = await new DirectoryUserService(graph).FindByEmailsAsync([], TestContext.Current.CancellationToken);
+
+        Assert.Empty(found);
+        Assert.Null(handler.LastRequestUri);
+    }
+
     #region Private methods
 
     private static string Accounts(params string[] accounts) => $$"""{ "value": [{{string.Join(',', accounts)}}] }""";
