@@ -94,6 +94,45 @@ public sealed class TeamMemberServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AddAsync_UserDeactivatedAfterLookup_ThrowsConflictAndLeavesNoActiveMembership()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var user = await _fixture.AddUserAsync("ada@contoso.com");
+        await _fixture.DeactivateUserAsync(user.Id);
+        var users = Substitute.For<IUserService>();
+        users.EnsureActiveAsync("ada@contoso.com", Arg.Any<CancellationToken>()).Returns(user.Id);
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            new TeamMemberService(ctx, users).AddAsync(team.Id, new AddTeamMemberActionDto("ada@contoso.com", Roles.TeamMember), TestContext.Current.CancellationToken));
+
+        await using var readCtx = _fixture.CreateContext();
+        Assert.False(await readCtx.TeamMembers.IgnoreQueryFilters(["UserDeactivation"]).AnyAsync(m => m.UserId == user.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AddAsync_RemovedMemberDeactivatedAfterLookup_ThrowsConflictAndLeavesMembershipRemoved()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var user = await _fixture.AddUserAsync("ada@contoso.com");
+        var other = await _fixture.AddUserAsync("bob@contoso.com");
+        await _fixture.AddTeamMemberAsync(team.Id, other.Id, Roles.TeamAdministrator);
+        await _fixture.AddTeamMemberAsync(team.Id, user.Id);
+        await RemoveAsync(team.Id, user.Id);
+        await _fixture.DeactivateUserAsync(user.Id);
+        var users = Substitute.For<IUserService>();
+        users.EnsureActiveAsync("ada@contoso.com", Arg.Any<CancellationToken>()).Returns(user.Id);
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            new TeamMemberService(ctx, users).AddAsync(team.Id, new AddTeamMemberActionDto("ada@contoso.com", Roles.TeamMember), TestContext.Current.CancellationToken));
+
+        await using var readCtx = _fixture.CreateContext();
+        var membership = await readCtx.TeamMembers.IgnoreQueryFilters().SingleAsync(m => m.UserId == user.Id, TestContext.Current.CancellationToken);
+        Assert.NotNull(membership.DateDeactivated);
+    }
+
+    [Fact]
     public async Task UpdateRoleAsync_PromoteMember_ChangesRole()
     {
         var team = await _fixture.AddTeamAsync();

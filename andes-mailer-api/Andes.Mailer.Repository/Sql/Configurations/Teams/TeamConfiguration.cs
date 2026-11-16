@@ -26,6 +26,8 @@ public sealed class TeamConfiguration : BaseModifiedEntityConfiguration<Team, Gu
         // Active rows only, so a deactivated team never blocks its name or mailbox from being used again.
         builder.HasIndex(t => t.Name).IsUnique().HasFilter("[DateDeactivated] IS NULL");
         builder.HasIndex(t => t.ServiceAccountEmail).IsUnique().HasFilter("[DateDeactivated] IS NULL");
+        // One mailbox can answer to several addresses, so the account id must be unique too, not just the address.
+        builder.HasIndex(t => t.ServiceAccountId).IsUnique().HasFilter("[DateDeactivated] IS NULL");
 
         builder.HasMany(t => t.Members)
             .WithOne(m => m.Team)

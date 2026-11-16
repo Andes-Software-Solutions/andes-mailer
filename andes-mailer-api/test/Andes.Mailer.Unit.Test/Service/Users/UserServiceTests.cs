@@ -1,6 +1,7 @@
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Actions.Users;
 using Andes.Mailer.Dto.Users;
+using Andes.Mailer.Entity.Teams;
 using Andes.Mailer.Repository.Sql.DbContexts;
 using Andes.Mailer.Service.Exceptions;
 using Andes.Mailer.Service.Users;
@@ -228,6 +229,37 @@ public sealed class UserServiceTests : IDisposable
 
         await using (var ctx = _fixture.CreateContext())
         {
+            await CreateService(ctx).DeactivateAsync(existing.Id, Guid.NewGuid(), TestContext.Current.CancellationToken);
+        }
+
+        await using var verifyCtx = _fixture.CreateContext();
+        var membership = await verifyCtx.TeamMembers.IgnoreQueryFilters().SingleAsync(m => m.UserId == existing.Id, TestContext.Current.CancellationToken);
+        Assert.NotNull(membership.DateDeactivated);
+    }
+
+    [Fact]
+    public async Task DeactivateAsync_MembershipCommittedDuringDeactivation_DeactivatesItToo()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var existing = await _fixture.AddUserAsync("ada@contoso.com");
+
+        await using (var ctx = _fixture.CreateContext())
+        {
+            // Stands in for TeamMemberService committing a membership after the memberships were read.
+            var added = false;
+            ctx.SavedChanges += (_, _) =>
+            {
+                if (added)
+                {
+                    return;
+                }
+
+                added = true;
+                using var addCtx = _fixture.CreateContext();
+                addCtx.Add(new TeamMember { TeamId = team.Id, UserId = existing.Id, RoleId = Roles.TeamMember });
+                addCtx.SaveChanges();
+            };
+
             await CreateService(ctx).DeactivateAsync(existing.Id, Guid.NewGuid(), TestContext.Current.CancellationToken);
         }
 

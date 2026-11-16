@@ -32,7 +32,7 @@ The permission grants for each role are in [Users and permissions](users-and-per
 
 ## Data model
 
-Both tables live in the `Core` schema and arrive in the migration `Andes.Mailer.Repository/Sql/Migrations/*_AddTeams.cs`.
+Both tables live in the `Core` schema and arrive in the migration `Andes.Mailer.Repository/Sql/Migrations/*_AddTeams.cs`. The migration `*_AddTeamServiceAccountIdIndex.cs` adds the unique index on `ServiceAccountId`.
 
 ### `[Core].[Team]`
 
@@ -42,10 +42,10 @@ Both tables live in the `Core` schema and arrive in the migration `Andes.Mailer.
 | `Name` | Up to 100 characters, trimmed. Unique among active teams only (a filtered unique index on rows where `DateDeactivated IS NULL`), so a deactivated team does not block its name. |
 | `Description` | Up to 500 characters. Null when you send nothing or only whitespace. |
 | `ServiceAccountEmail` | The mailbox the team sends from, up to 256 characters, always stored in lowercase. Unique among active teams. |
-| `ServiceAccountId` | The Entra object id of that mailbox. Not a foreign key: a service account sends mail but never signs in, so it is not a row in `[Core].[User]`. |
+| `ServiceAccountId` | The Entra object id of that mailbox. Unique among active teams (the filtered unique index `IX_Team_ServiceAccountId`). Not a foreign key: a service account sends mail but never signs in, so it is not a row in `[Core].[User]`. |
 | `DateCreated`, `DateModified`, `DateDeactivated`, `Version` | The same audit, soft-delete, and `rowversion` columns as [`[Core].[User]`](users-and-permissions.md#coreuser). |
 
-One mailbox serves one team. The API checks both the address and the object id, because a mailbox's `mail` and `userPrincipalName` are two spellings of the same account.
+One mailbox serves one team. The API checks both the address and the object id, because a mailbox's `mail` and `userPrincipalName` are two spellings of the same account. The database enforces both as unique indexes among active teams, so if two concurrent requests use two addresses of one mailbox, one succeeds and the other gets a 409.
 
 ### `[Core].[TeamMember]`
 
@@ -155,7 +155,7 @@ The API trims the name, trims and lowercases the address, and looks the mailbox 
 | 400 | A field breaks its rule. |
 | 403 | The caller lacks `CreateTeam`. |
 | 404 | No directory account owns the service account's address. |
-| 409 | An active team already has the name, or already sends from that mailbox. A request that loses a race with another create also returns 409. |
+| 409 | An active team already has the name, or already sends from that mailbox, under any of its addresses. A request that loses a race with another create also returns 409. |
 
 ### Update a team
 
@@ -181,7 +181,7 @@ The update applies only if the row still has the `version` you sent. If anyone c
 | 400 | A field breaks its rule, or `version` is not an 8-byte base64 row version. |
 | 403 | The caller lacks `ModifyTeam`. |
 | 404 | No active team has that id, or a new address has no directory account. |
-| 409 | The `version` is stale, or another active team has the name or the mailbox. |
+| 409 | The `version` is stale, or another active team has the name or the mailbox, under any of its addresses. |
 
 ### Deactivate a team
 
@@ -250,9 +250,9 @@ The person does not have to be a user yet. If no user has the address, the API l
 | 400 | `email` is empty, too long, or not an address, or `role` is not a team role. |
 | 403 | The caller lacks `CreateTeamUser` in this team. |
 | 404 | The team is missing or the caller is not in it, or no directory account owns the address. |
-| 409 | The person is already an active member, or another request added them at the same moment, or they are a user an `Administrator` deactivated. |
+| 409 | The person is already an active member, or another request added them at the same moment, or they are a user an `Administrator` deactivated, including one deactivated while the request ran. |
 
-**Deactivated users.** Deactivating a user is an administrator's decision, so adding a member does not undo it. The call returns 409 until someone with `CreateUser` [adds the user again](users-and-permissions.md#add-a-user).
+**Deactivated users.** Deactivating a user is an administrator's decision, so adding a member does not undo it. The call returns 409 until someone with `CreateUser` [adds the user again](users-and-permissions.md#add-a-user). If an `Administrator` deactivates the user while the request runs, the API removes the new membership again and returns 409 ("This user was deactivated while being added to the team."), so no active membership outlives its user.
 
 **Returning members.** A person you removed earlier comes back as the same row with the role in the request, not a second row.
 

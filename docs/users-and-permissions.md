@@ -179,7 +179,7 @@ Only the name changes; the email comes from the directory and cannot be edited h
 
 ### Deactivate a user
 
-`DELETE /api/users/{id}` soft-deletes the user: it stamps `DateDeactivated`, deletes the user's `UserRole` rows, and deactivates all their `TeamMember` rows, in one save. That includes memberships in teams that are already deactivated, so reactivating a team later cannot bring back someone deactivated in the meantime. The user row stays, so the history and the object id are preserved, and so do the emails they started (`authorId`).
+`DELETE /api/users/{id}` soft-deletes the user: it stamps `DateDeactivated`, deletes the user's `UserRole` rows, and deactivates all their `TeamMember` rows, in one save. That includes memberships in teams that are already deactivated, so reactivating a team later cannot bring back someone deactivated in the meantime. A membership added concurrently is swept too, so none outlives its user. The user row stays, so the history and the object id are preserved, and so do the emails they started (`authorId`).
 
 | Status | When |
 | --- | --- |

@@ -1,5 +1,6 @@
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Actions.Teams;
+using Andes.Mailer.Entity.Teams;
 using Andes.Mailer.Repository.Sql.DbContexts;
 using Andes.Mailer.Service.Exceptions;
 using Andes.Mailer.Service.Security;
@@ -65,6 +66,16 @@ public sealed class TeamServiceTests : IDisposable
 
         await Assert.ThrowsAsync<ConflictException>(() =>
             CreateService(ctx).CreateAsync(new CreateTeamActionDto("Support", null, "shared@contoso.com"), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AddingSecondActiveTeamWithSameServiceAccountId_ViolatesUniqueIndex()
+    {
+        var team = await _fixture.AddTeamAsync();
+        await using var ctx = _fixture.CreateContext();
+        ctx.Add(new Team { Name = "Support", ServiceAccountEmail = "alias@contoso.com", ServiceAccountId = team.ServiceAccountId });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => ctx.SaveChangesAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]

@@ -46,7 +46,7 @@ public interface ITeamMemberService
     /// <returns>The new member.</returns>
     /// <exception cref="NotFoundException">No user has the address and no directory account owns it.</exception>
     /// <exception cref="ConflictException">
-    /// The person is already an active member of the team, is a user an administrator deactivated, or was added by another request at the same time.
+    /// The person is already an active member of the team, is a user an administrator deactivated before or during the operation, or was added by another request at the same time.
     /// </exception>
     Task<TeamMemberDto> AddAsync(Guid teamId, AddTeamMemberActionDto action, CancellationToken cancellationToken);
 
@@ -121,13 +121,15 @@ public sealed class TeamMemberService(AndesMailerDbContext ctx, IUserService use
 
         var userId = await _users.EnsureActiveAsync(action.Email, cancellationToken);
 
-        // Unique over every row, so a removed member comes back as the same row rather than a second one.
+        // Unique over every row, so a removed member comes back as the same row rather than a second one. The user filter is
+        // ignored too, so a user deactivated since the lookup still finds their row instead of colliding with it.
         var member = await _ctx.TeamMembers
-            .IgnoreQueryFilters(["Deactivation"])
+            .IgnoreQueryFilters(["Deactivation", "UserDeactivation"])
             .FirstOrDefaultAsync(m => m.TeamId == teamId && m.UserId == userId, cancellationToken);
         if (member is null)
         {
-            _ctx.Add(new TeamMember { TeamId = teamId, UserId = userId, RoleId = action.Role });
+            member = new TeamMember { TeamId = teamId, UserId = userId, RoleId = action.Role };
+            _ctx.Add(member);
         }
         else if (member.DateDeactivated is null)
         {
@@ -147,12 +149,23 @@ public sealed class TeamMemberService(AndesMailerDbContext ctx, IUserService use
         {
             // Re-checked rather than read from the provider's error number, which would bring SQL Server types into Service.
             // Any other store fault propagates, so GlobalExceptionHandler logs it as a 500.
-            if (await _ctx.TeamMembers.AsNoTracking().AnyAsync(m => m.TeamId == teamId && m.UserId == userId, cancellationToken))
+            if (await _ctx.TeamMembers.AsNoTracking().IgnoreQueryFilters(["UserDeactivation"]).AnyAsync(m => m.TeamId == teamId && m.UserId == userId, cancellationToken))
             {
                 throw new ConflictException("Another request added this user to the team at the same time.");
             }
 
             throw;
+        }
+
+        // The user can be deactivated after the lookup. UserService.DeactivateAsync sweeps memberships again after it commits, and
+        // this checks the user again after the membership commits, so whichever commits second sees the other's write. Not
+        // cancellable: the membership is already committed, and stopping here could leave it active for a deactivated user.
+        if (!await _ctx.Users.AsNoTracking().AnyAsync(u => u.Id == userId, CancellationToken.None))
+        {
+            _ctx.Remove(member);
+            await SaveAsync(CancellationToken.None);
+
+            throw new ConflictException("This user was deactivated while being added to the team.");
         }
 
         return await GetAsync(teamId, userId, cancellationToken);

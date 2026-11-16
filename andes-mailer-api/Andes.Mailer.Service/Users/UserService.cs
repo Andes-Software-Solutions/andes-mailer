@@ -211,6 +211,28 @@ public sealed class UserService(AndesMailerDbContext ctx, IDirectoryUserService 
         // DeactivationInterceptor turns the user's and the memberships' deletes into DateDeactivated stamps.
         _ctx.Remove(user);
         await SaveAsync(cancellationToken);
+
+        // TeamMemberService can commit a membership between the read above and the save. Swept again now the deactivation is
+        // committed; TeamMemberService checks the user again after its own commit, so whichever commits second sees the other's write.
+        // Not cancellable: the user is already deactivated, and stopping here could leave a membership active.
+        var late = await _ctx.TeamMembers
+            .IgnoreQueryFilters(["TeamDeactivation", "UserDeactivation"])
+            .Where(m => m.UserId == id)
+            .ToListAsync(CancellationToken.None);
+        if (late.Count == 0)
+        {
+            return;
+        }
+
+        _ctx.RemoveRange(late);
+        try
+        {
+            await _ctx.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Nothing else writes a deactivated user's memberships but TeamMemberService's own compensation, so the row is already stamped.
+        }
     }
 
     #region Private methods

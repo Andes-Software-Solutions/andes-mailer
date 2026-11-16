@@ -418,6 +418,10 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .IsUnique()
                         .HasFilter("[DateDeactivated] IS NULL");
 
+                    b.HasIndex("ServiceAccountId")
+                        .IsUnique()
+                        .HasFilter("[DateDeactivated] IS NULL");
+
                     b.ToTable("Team", "Core");
                 });
 
