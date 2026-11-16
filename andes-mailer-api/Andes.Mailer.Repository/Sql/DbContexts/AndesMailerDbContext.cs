@@ -1,4 +1,5 @@
 using Andes.Mailer.Entity.Emails;
+using Andes.Mailer.Entity.Teams;
 using Andes.Mailer.Entity.Users;
 
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,16 @@ public sealed class AndesMailerDbContext(DbContextOptions<AndesMailerDbContext> 
     /// Gets the permissions granted to roles.
     /// </summary>
     public DbSet<RoleGrant> RoleGrants => Set<RoleGrant>();
+
+    /// <summary>
+    /// Gets the teams.
+    /// </summary>
+    public DbSet<Team> Teams => Set<Team>();
+
+    /// <summary>
+    /// Gets the memberships of users in teams.
+    /// </summary>
+    public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
 
     /// <summary>
     /// Gets the emails.

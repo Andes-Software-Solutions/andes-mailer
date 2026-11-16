@@ -1,6 +1,9 @@
 using Andes.Mailer.Common.Enums;
+using Andes.Mailer.Entity.Users;
 using Andes.Mailer.Service.Security;
 using Andes.Mailer.Unit.Test.TestInfrastructure;
+
+using Microsoft.EntityFrameworkCore;
 
 namespace Andes.Mailer.Unit.Test.Service.Security;
 
@@ -10,14 +13,22 @@ public sealed class PermissionServiceTests : IDisposable
 
     public static TheoryData<Permissions> AllPermissions => [.. Enum.GetValues<Permissions>()];
 
-    public static TheoryData<Permissions, bool> TeamAdministratorGrants => new()
+    public static TheoryData<Roles, Permissions, TeamAccess> TeamRoleGrants => new()
     {
-        { Permissions.CreateUser, false },
-        { Permissions.ModifyUser, false },
-        { Permissions.DeactivateUser, false },
-        { Permissions.CreateTeamUser, true },
-        { Permissions.ModifyTeamUser, true },
-        { Permissions.DeactivateTeamUser, true },
+        { Roles.TeamAdministrator, Permissions.ViewTeam, TeamAccess.Granted },
+        { Roles.TeamAdministrator, Permissions.ComposeTeamEmails, TeamAccess.Granted },
+        { Roles.TeamAdministrator, Permissions.CanAttachDocuments, TeamAccess.Granted },
+        { Roles.TeamAdministrator, Permissions.CreateTeamUser, TeamAccess.Granted },
+        { Roles.TeamAdministrator, Permissions.ModifyTeamUser, TeamAccess.Granted },
+        { Roles.TeamAdministrator, Permissions.DeactivateTeamUser, TeamAccess.Granted },
+        { Roles.TeamAdministrator, Permissions.CreateTeam, TeamAccess.Forbidden },
+        { Roles.TeamAdministrator, Permissions.CreateUser, TeamAccess.Forbidden },
+        { Roles.TeamMember, Permissions.ViewTeam, TeamAccess.Granted },
+        { Roles.TeamMember, Permissions.ComposeTeamEmails, TeamAccess.Granted },
+        { Roles.TeamMember, Permissions.CanAttachDocuments, TeamAccess.Granted },
+        { Roles.TeamMember, Permissions.CreateTeamUser, TeamAccess.Forbidden },
+        { Roles.TeamMember, Permissions.ModifyTeamUser, TeamAccess.Forbidden },
+        { Roles.TeamMember, Permissions.DeactivateTeamUser, TeamAccess.Forbidden },
     };
 
     [Theory]
@@ -29,13 +40,14 @@ public sealed class PermissionServiceTests : IDisposable
         Assert.True(await HasPermissionAsync(user.Id, permission));
     }
 
-    [Theory]
-    [MemberData(nameof(TeamAdministratorGrants))]
-    public async Task HasPermissionAsync_TeamAdministrator_ReturnsTeamPermissionsOnly(Permissions permission, bool expected)
+    [Fact]
+    public async Task HasPermissionAsync_TeamAdministratorOfATeam_GrantsNothingGlobally()
     {
-        var user = await _fixture.AddUserAsync("ada@contoso.com", role: Roles.TeamAdministrator);
+        var team = await _fixture.AddTeamAsync();
+        var user = await _fixture.AddUserAsync("ada@contoso.com");
+        await _fixture.AddTeamMemberAsync(team.Id, user.Id, Roles.TeamAdministrator);
 
-        Assert.Equal(expected, await HasPermissionAsync(user.Id, permission));
+        Assert.False(await HasPermissionAsync(user.Id, Permissions.CreateTeamUser));
     }
 
     [Fact]
@@ -59,6 +71,95 @@ public sealed class PermissionServiceTests : IDisposable
     public async Task HasPermissionAsync_UnknownUser_ReturnsFalse() =>
         Assert.False(await HasPermissionAsync(Guid.NewGuid(), Permissions.CreateUser));
 
+    [Fact]
+    public async Task AddingGlobalTeamRole_ViolatesCheckConstraint()
+    {
+        var user = await _fixture.AddUserAsync("ada@contoso.com");
+        await using var ctx = _fixture.CreateContext();
+        ctx.Add(new UserRole { UserId = user.Id, RoleId = Roles.TeamAdministrator });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => ctx.SaveChangesAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [MemberData(nameof(TeamRoleGrants))]
+    public async Task CheckTeamPermissionAsync_Member_FollowsTheirTeamRole(Roles role, Permissions permission, TeamAccess expected)
+    {
+        var team = await _fixture.AddTeamAsync();
+        var user = await _fixture.AddUserAsync("ada@contoso.com");
+        await _fixture.AddTeamMemberAsync(team.Id, user.Id, role);
+
+        Assert.Equal(expected, await CheckTeamPermissionAsync(user.Id, team.Id, permission));
+    }
+
+    [Fact]
+    public async Task CheckTeamPermissionAsync_AdministratorOutsideTheTeam_IsGranted()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var user = await _fixture.AddUserAsync("ada@contoso.com", role: Roles.Administrator);
+
+        Assert.Equal(TeamAccess.Granted, await CheckTeamPermissionAsync(user.Id, team.Id, Permissions.ComposeTeamEmails));
+    }
+
+    [Fact]
+    public async Task CheckTeamPermissionAsync_MemberOfAnotherTeam_IsNotFound()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var otherTeam = await _fixture.AddTeamAsync();
+        var user = await _fixture.AddUserAsync("ada@contoso.com");
+        await _fixture.AddTeamMemberAsync(otherTeam.Id, user.Id, Roles.TeamAdministrator);
+
+        Assert.Equal(TeamAccess.NotFound, await CheckTeamPermissionAsync(user.Id, team.Id, Permissions.ViewTeam));
+    }
+
+    [Fact]
+    public async Task CheckTeamPermissionAsync_RemovedMember_IsNotFound()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var user = await _fixture.AddUserAsync("ada@contoso.com");
+        var member = await _fixture.AddTeamMemberAsync(team.Id, user.Id);
+        await using (var ctx = _fixture.CreateContext())
+        {
+            ctx.Remove(await ctx.TeamMembers.SingleAsync(m => m.Id == member.Id, TestContext.Current.CancellationToken));
+            await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(TeamAccess.NotFound, await CheckTeamPermissionAsync(user.Id, team.Id, Permissions.ViewTeam));
+    }
+
+    [Fact]
+    public async Task CheckTeamPermissionAsync_DeactivatedUser_IsNotFound()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var user = await _fixture.AddUserAsync("ada@contoso.com");
+        await _fixture.AddTeamMemberAsync(team.Id, user.Id, Roles.TeamAdministrator);
+        await _fixture.DeactivateUserAsync(user.Id);
+
+        Assert.Equal(TeamAccess.NotFound, await CheckTeamPermissionAsync(user.Id, team.Id, Permissions.ViewTeam));
+    }
+
+    [Fact]
+    public async Task CheckTeamPermissionAsync_DeactivatedTeam_IsNotFoundEvenForAdministrator()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var user = await _fixture.AddUserAsync("ada@contoso.com", role: Roles.Administrator);
+        await using (var ctx = _fixture.CreateContext())
+        {
+            ctx.Remove(await ctx.Teams.SingleAsync(t => t.Id == team.Id, TestContext.Current.CancellationToken));
+            await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(TeamAccess.NotFound, await CheckTeamPermissionAsync(user.Id, team.Id, Permissions.ViewTeam));
+    }
+
+    [Fact]
+    public async Task CheckTeamPermissionAsync_UnknownTeam_IsNotFound()
+    {
+        var user = await _fixture.AddUserAsync("ada@contoso.com", role: Roles.Administrator);
+
+        Assert.Equal(TeamAccess.NotFound, await CheckTeamPermissionAsync(user.Id, Guid.NewGuid(), Permissions.ViewTeam));
+    }
+
     public void Dispose() => _fixture.Dispose();
 
     #region Private methods
@@ -68,6 +169,13 @@ public sealed class PermissionServiceTests : IDisposable
         await using var ctx = _fixture.CreateContext();
 
         return await new PermissionService(ctx).HasPermissionAsync(userId, permission, TestContext.Current.CancellationToken);
+    }
+
+    private async Task<TeamAccess> CheckTeamPermissionAsync(Guid userId, Guid teamId, Permissions permission)
+    {
+        await using var ctx = _fixture.CreateContext();
+
+        return await new PermissionService(ctx).CheckTeamPermissionAsync(userId, teamId, permission, TestContext.Current.CancellationToken);
     }
 
     #endregion

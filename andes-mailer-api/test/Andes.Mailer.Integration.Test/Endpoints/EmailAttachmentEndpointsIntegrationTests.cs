@@ -21,7 +21,6 @@ namespace Andes.Mailer.Integration.Test.Endpoints;
 
 public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fixture, AzuriteFixture azurite)
 {
-    private const string EmailsPath = "/api/emails";
     private const string AttachmentsContainer = "attachments";
 
     private static readonly byte[] _pdf = Encoding.ASCII.GetBytes("%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n");
@@ -32,16 +31,17 @@ public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fi
     [Fact]
     public async Task UploadAttachment_Pdf_StoresInBackgroundAndDownloadsSameBytes()
     {
-        var caller = await TestCallers.SeedAsync(_fixture, Roles.Administrator);
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team);
         await using var factory = CreateFactory();
         using var client = TestCallers.CreateClient(factory, caller);
-        var email = await CreateDraftAsync(client);
+        var email = await CreateDraftAsync(client, team);
 
-        using var response = await UploadAsync(client, email.Id, "Q3 report.pdf", _pdf);
+        using var response = await UploadAsync(client, team, email.Id, "Q3 report.pdf", _pdf);
         var accepted = await response.Content.ReadFromJsonAsync<EmailAttachmentDto>(ApiJson.Options, TestContext.Current.CancellationToken);
         var stored = await PollUntilSettledAsync(client, response.Headers.Location!);
         var downloaded = await client.GetByteArrayAsync(new Uri($"{response.Headers.Location}/content", UriKind.Relative), TestContext.Current.CancellationToken);
-        var reloaded = await client.GetFromJsonAsync<EmailDto>($"{EmailsPath}/{email.Id}", ApiJson.Options, TestContext.Current.CancellationToken);
+        var reloaded = await client.GetFromJsonAsync<EmailDto>($"{EmailsPath(team)}/{email.Id}", ApiJson.Options, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         Assert.Equal(AttachmentStatuses.Pending, accepted!.Status);
@@ -54,31 +54,17 @@ public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fi
     }
 
     [Fact]
-    public async Task UploadAttachment_TeamAdministrator_IsAccepted()
+    public async Task UploadAttachment_AdministratorOutsideTheTeam_IsAccepted()
     {
-        var caller = await TestCallers.SeedAsync(_fixture, Roles.TeamAdministrator);
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedAsync(_fixture, Roles.Administrator);
         await using var factory = CreateFactory();
         using var client = TestCallers.CreateClient(factory, caller);
-        var email = await CreateDraftAsync(client);
+        var email = await CreateDraftAsync(client, team);
 
-        using var response = await UploadAsync(client, email.Id, "slide.png", [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
+        using var response = await UploadAsync(client, team, email.Id, "slide.png", [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task UploadAttachment_WithoutCanAttachDocuments_ReturnsForbiddenProblem()
-    {
-        var caller = await TestCallers.SeedAsync(_fixture);
-        await using var factory = CreateFactory();
-        using var client = TestCallers.CreateClient(factory, caller);
-        var email = await CreateDraftAsync(client);
-
-        using var response = await UploadAsync(client, email.Id, "report.pdf", _pdf);
-        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(TestContext.Current.CancellationToken);
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Contains(nameof(Permissions.CanAttachDocuments), problem!.Detail, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -87,14 +73,15 @@ public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fi
     [InlineData("deck.pptx", "%PDF-1.7 not a zip")]
     public async Task UploadAttachment_TypeNotAcceptedOrContentMismatch_ReturnsValidationProblem(string fileName, string content)
     {
-        var caller = await TestCallers.SeedAsync(_fixture, Roles.Administrator);
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team);
         await using var factory = CreateFactory();
         using var client = TestCallers.CreateClient(factory, caller);
-        var email = await CreateDraftAsync(client);
+        var email = await CreateDraftAsync(client, team);
 
-        using var response = await UploadAsync(client, email.Id, fileName, Encoding.Latin1.GetBytes(content));
+        using var response = await UploadAsync(client, team, email.Id, fileName, Encoding.Latin1.GetBytes(content));
         var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>(TestContext.Current.CancellationToken);
-        var reloaded = await client.GetFromJsonAsync<EmailDto>($"{EmailsPath}/{email.Id}", ApiJson.Options, TestContext.Current.CancellationToken);
+        var reloaded = await client.GetFromJsonAsync<EmailDto>($"{EmailsPath(team)}/{email.Id}", ApiJson.Options, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("file", problem!.Errors.Keys);
@@ -102,16 +89,18 @@ public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fi
     }
 
     [Fact]
-    public async Task UploadAttachment_AnotherUsersDraft_ReturnsNotFound()
+    public async Task UploadAttachment_MemberOfAnotherTeam_ReturnsNotFound()
     {
-        var owner = await TestCallers.SeedAsync(_fixture);
-        var other = await TestCallers.SeedAsync(_fixture, Roles.Administrator);
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var otherTeam = await TestCallers.SeedTeamAsync(_fixture);
+        var owner = await TestCallers.SeedMemberAsync(_fixture, team);
+        var other = await TestCallers.SeedMemberAsync(_fixture, otherTeam, Roles.TeamAdministrator);
         await using var factory = CreateFactory();
         using var ownerClient = TestCallers.CreateClient(factory, owner);
-        var email = await CreateDraftAsync(ownerClient);
+        var email = await CreateDraftAsync(ownerClient, team);
         using var otherClient = TestCallers.CreateClient(factory, other);
 
-        using var response = await UploadAsync(otherClient, email.Id, "report.pdf", _pdf);
+        using var response = await UploadAsync(otherClient, team, email.Id, "report.pdf", _pdf);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -119,11 +108,12 @@ public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fi
     [Fact]
     public async Task DeleteAttachment_Uploaded_RemovesRowAndBlob()
     {
-        var caller = await TestCallers.SeedAsync(_fixture, Roles.Administrator);
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team);
         await using var factory = CreateFactory();
         using var client = TestCallers.CreateClient(factory, caller);
-        var email = await CreateDraftAsync(client);
-        using var upload = await UploadAsync(client, email.Id, "report.pdf", _pdf);
+        var email = await CreateDraftAsync(client, team);
+        using var upload = await UploadAsync(client, team, email.Id, "report.pdf", _pdf);
         var location = upload.Headers.Location!;
         var stored = await PollUntilSettledAsync(client, location);
         var blob = new BlobServiceClient(_azurite.ConnectionString)
@@ -151,15 +141,16 @@ public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fi
                 uploadStarted.TrySetResult();
                 return releaseUpload.Task;
             });
-        var caller = await TestCallers.SeedAsync(_fixture, Roles.Administrator);
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team);
         await using var factory = new AndesMailerApiFactory(
             _fixture.ConnectionString,
             _azurite.ConnectionString,
             useTestAuthentication: true,
             configureTestServices: services => services.AddSingleton(store));
         using var client = TestCallers.CreateClient(factory, caller);
-        var email = await CreateDraftAsync(client);
-        using var upload = await UploadAsync(client, email.Id, "report.pdf", _pdf);
+        var email = await CreateDraftAsync(client, team);
+        using var upload = await UploadAsync(client, team, email.Id, "report.pdf", _pdf);
         var accepted = await upload.Content.ReadFromJsonAsync<EmailAttachmentDto>(ApiJson.Options, TestContext.Current.CancellationToken);
         await uploadStarted.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
 
@@ -186,22 +177,24 @@ public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fi
 
     #region Private methods
 
-    private static async Task<EmailDto> CreateDraftAsync(HttpClient client)
+    private static string EmailsPath(Guid teamId) => $"/api/teams/{teamId}/emails";
+
+    private static async Task<EmailDto> CreateDraftAsync(HttpClient client, Guid teamId)
     {
-        using var response = await client.PostAsJsonAsync(EmailsPath, new CreateEmailActionDto("Report", "<p>Attached.</p>", []), ApiJson.Options, TestContext.Current.CancellationToken);
+        using var response = await client.PostAsJsonAsync(EmailsPath(teamId), new CreateEmailActionDto("Report", "<p>Attached.</p>", []), ApiJson.Options, TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
 
         return (await response.Content.ReadFromJsonAsync<EmailDto>(ApiJson.Options, TestContext.Current.CancellationToken))!;
     }
 
-    private static async Task<HttpResponseMessage> UploadAsync(HttpClient client, Guid emailId, string fileName, byte[] content)
+    private static async Task<HttpResponseMessage> UploadAsync(HttpClient client, Guid teamId, Guid emailId, string fileName, byte[] content)
     {
         using var form = new MultipartFormDataContent();
         var file = new ByteArrayContent(content);
         file.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
         form.Add(file, "file", fileName);
 
-        return await client.PostAsync(new Uri($"{EmailsPath}/{emailId}/attachments", UriKind.Relative), form, TestContext.Current.CancellationToken);
+        return await client.PostAsync(new Uri($"{EmailsPath(teamId)}/{emailId}/attachments", UriKind.Relative), form, TestContext.Current.CancellationToken);
     }
 
     // The upload runs in the background, so the test polls the way the UI does.

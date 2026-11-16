@@ -11,7 +11,7 @@ namespace Andes.Mailer.Dto.Actions.Emails;
 /// </summary>
 /// <param name="Subject">The subject; may be empty while composing.</param>
 /// <param name="BodyHtml">The body as HTML; the API strips anything outside the editor's formatting before storing it.</param>
-/// <param name="Recipients">The complete recipient list, in the order the sender entered it; recipients left out are removed.</param>
+/// <param name="Recipients">The complete recipient list, in the order it was entered; recipients left out are removed.</param>
 /// <param name="Version">The row version the caller last read, as base64; the update fails if the email changed since.</param>
 public sealed record UpdateEmailActionDto(string Subject, string BodyHtml, IReadOnlyList<EmailRecipientActionDto> Recipients, string Version);
 

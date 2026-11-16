@@ -58,7 +58,7 @@ public sealed class EmailRecipient
     public string? DisplayName { get; set; }
 
     /// <summary>
-    /// Gets or sets the zero-based position the sender entered the recipient at.
+    /// Gets or sets the zero-based position the recipient was entered at.
     /// </summary>
     public int Position { get; set; }
 }

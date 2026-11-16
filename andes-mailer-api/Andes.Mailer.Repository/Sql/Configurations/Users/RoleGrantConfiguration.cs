@@ -12,12 +12,19 @@ namespace Andes.Mailer.Repository.Sql.Configurations.Users;
 /// </summary>
 public sealed class RoleGrantConfiguration : IEntityTypeConfiguration<RoleGrant>
 {
+    private static readonly Permissions[] _teamMemberPermissions =
+    [
+        Permissions.CanAttachDocuments,
+        Permissions.ViewTeam,
+        Permissions.ComposeTeamEmails,
+    ];
+
     private static readonly Permissions[] _teamAdministratorPermissions =
     [
+        .. _teamMemberPermissions,
         Permissions.CreateTeamUser,
         Permissions.ModifyTeamUser,
         Permissions.DeactivateTeamUser,
-        Permissions.CanAttachDocuments,
     ];
 
     /// <inheritdoc/>
@@ -41,6 +48,7 @@ public sealed class RoleGrantConfiguration : IEntityTypeConfiguration<RoleGrant>
         [
             .. Enum.GetValues<Permissions>().Select(p => new RoleGrant { RoleId = Roles.Administrator, PermissionId = p }),
             .. _teamAdministratorPermissions.Select(p => new RoleGrant { RoleId = Roles.TeamAdministrator, PermissionId = p }),
+            .. _teamMemberPermissions.Select(p => new RoleGrant { RoleId = Roles.TeamMember, PermissionId = p }),
         ]);
     }
 }

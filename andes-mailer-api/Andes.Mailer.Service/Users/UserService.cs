@@ -43,6 +43,16 @@ public interface IUserService
     Task<UserDto> CreateAsync(CreateUserActionDto action, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Finds the active user an email address belongs to, adding the directory account that owns it as a new user if there is none.
+    /// </summary>
+    /// <param name="email">The email address to look up.</param>
+    /// <param name="cancellationToken">A token that cancels the operation.</param>
+    /// <returns>The active user's Entra object id.</returns>
+    /// <exception cref="NotFoundException">No user has the address and no directory account owns it.</exception>
+    /// <exception cref="ConflictException">The directory account is a deactivated user, or another request added the user at the same time.</exception>
+    Task<Guid> EnsureActiveAsync(string email, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Changes an active user's name.
     /// </summary>
     /// <param name="id">The user's Entra object id.</param>
@@ -54,7 +64,7 @@ public interface IUserService
     Task<UserDto> UpdateAsync(Guid id, UpdateUserActionDto action, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Deactivates an active user and revokes their roles, so adding them again later grants no permissions until roles are re-granted.
+    /// Deactivates an active user and revokes their roles and team memberships, so adding them again later grants no access until it is re-granted.
     /// </summary>
     /// <param name="id">The user's Entra object id.</param>
     /// <param name="callerId">The Entra object id of the signed-in user.</param>
@@ -113,57 +123,53 @@ public sealed class UserService(AndesMailerDbContext ctx, IDirectoryUserService 
     {
         ArgumentNullException.ThrowIfNull(action);
 
-        var email = action.Email.Trim().ToLowerInvariant();
+        var email = NormalizeEmail(action.Email);
         if (await _ctx.Users.AnyAsync(u => u.Email == email, cancellationToken))
         {
             throw new ConflictException("A user with this email already exists.");
         }
 
-        var account = await _directory.FindByEmailAsync(email, cancellationToken)
-            ?? throw new NotFoundException("No directory account has this email.");
-
-        // The key is the Entra object id, so a deactivated user comes back as the same row rather than a second one.
+        var account = await FindAccountAsync(email, cancellationToken);
         var user = await FindIncludingDeactivatedAsync(account.Id, cancellationToken);
-        if (user is null)
-        {
-            user = new User
-            {
-                Id = account.Id,
-                FirstName = account.FirstName,
-                LastName = account.LastName,
-                Email = account.Email,
-            };
-            _ctx.Add(user);
-        }
-        else if (user.DateDeactivated is null)
+        if (user is { DateDeactivated: null })
         {
             throw new ConflictException("This directory account is already a user under another email.");
         }
-        else
+
+        return UserMapper.MapToUserDto(await AddOrReactivateAsync(user, account, cancellationToken));
+    }
+
+    /// <inheritdoc/>
+    public async Task<Guid> EnsureActiveAsync(string email, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(email);
+
+        var normalized = NormalizeEmail(email);
+        var existingId = await _ctx.Users
+            .Where(u => u.Email == normalized)
+            .Select(u => (Guid?)u.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (existingId is not null)
         {
-            user.DateDeactivated = null;
-            user.FirstName = account.FirstName;
-            user.LastName = account.LastName;
-            user.Email = account.Email;
+            return existingId.Value;
         }
 
-        try
-        {
-            await SaveAsync(cancellationToken);
-        }
-        catch (DbUpdateException)
-        {
-            // Re-checked rather than read from the provider's error number, which would bring SQL Server types into Service.
-            // Any other store fault propagates, so GlobalExceptionHandler logs it as a 500.
-            if (await IsTakenAsync(account, cancellationToken))
-            {
-                throw new ConflictException("Another request added a user with this email or account at the same time.");
-            }
+        var account = await FindAccountAsync(normalized, cancellationToken);
+        var user = await FindIncludingDeactivatedAsync(account.Id, cancellationToken);
 
-            throw;
+        // An address the directory resolves to an account that is already active under its other address, such as the UPN rather than the mail.
+        if (user is { DateDeactivated: null })
+        {
+            return user.Id;
         }
 
-        return UserMapper.MapToUserDto(user);
+        // Deactivating a user is an administrator's decision, so only CreateAsync, behind CreateUser, may undo it.
+        if (user is not null)
+        {
+            throw new ConflictException("This user was deactivated. An administrator must add them again before they can join a team.");
+        }
+
+        return (await AddOrReactivateAsync(null, account, cancellationToken)).Id;
     }
 
     /// <inheritdoc/>
@@ -194,15 +200,89 @@ public sealed class UserService(AndesMailerDbContext ctx, IDirectoryUserService 
         var user = await _ctx.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken)
             ?? throw new NotFoundException(NotFoundMessage);
 
-        // Roles are revoked, not just hidden, so re-adding the user later restores no permissions nobody re-granted.
+        // Roles and memberships are revoked, not just hidden, so re-adding the user later restores no access nobody re-granted.
         _ctx.RemoveRange(await _ctx.UserRoles.Where(ur => ur.UserId == id).ToListAsync(cancellationToken));
+        // Deactivated teams' memberships too, so reactivating such a team later brings back nobody who was deactivated meanwhile.
+        _ctx.RemoveRange(await _ctx.TeamMembers
+            .IgnoreQueryFilters(["TeamDeactivation"])
+            .Where(m => m.UserId == id)
+            .ToListAsync(cancellationToken));
 
-        // DeactivationInterceptor turns the user's delete into a DateDeactivated stamp.
+        // DeactivationInterceptor turns the user's and the memberships' deletes into DateDeactivated stamps.
         _ctx.Remove(user);
         await SaveAsync(cancellationToken);
+
+        // TeamMemberService can commit a membership between the read above and the save. Swept again now the deactivation is
+        // committed; TeamMemberService checks the user again after its own commit, so whichever commits second sees the other's write.
+        // Not cancellable: the user is already deactivated, and stopping here could leave a membership active.
+        var late = await _ctx.TeamMembers
+            .IgnoreQueryFilters(["TeamDeactivation", "UserDeactivation"])
+            .Where(m => m.UserId == id)
+            .ToListAsync(CancellationToken.None);
+        if (late.Count == 0)
+        {
+            return;
+        }
+
+        _ctx.RemoveRange(late);
+        try
+        {
+            await _ctx.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Nothing else writes a deactivated user's memberships but TeamMemberService's own compensation, so the row is already stamped.
+        }
     }
 
     #region Private methods
+
+    private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
+
+    private async Task<DirectoryUser> FindAccountAsync(string email, CancellationToken cancellationToken) =>
+        await _directory.FindByEmailAsync(email, cancellationToken)
+            ?? throw new NotFoundException("No directory account has this email.");
+
+    // The key is the Entra object id, so a deactivated user comes back as the same row rather than a second one.
+    private async Task<User> AddOrReactivateAsync(User? user, DirectoryUser account, CancellationToken cancellationToken)
+    {
+        if (user is null)
+        {
+            user = new User
+            {
+                Id = account.Id,
+                FirstName = account.FirstName,
+                LastName = account.LastName,
+                Email = account.Email,
+            };
+            _ctx.Add(user);
+        }
+        else
+        {
+            user.DateDeactivated = null;
+            user.FirstName = account.FirstName;
+            user.LastName = account.LastName;
+            user.Email = account.Email;
+        }
+
+        try
+        {
+            await SaveAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // Re-checked rather than read from the provider's error number, which would bring SQL Server types into Service.
+            // Any other store fault propagates, so GlobalExceptionHandler logs it as a 500.
+            if (await IsTakenAsync(account, cancellationToken))
+            {
+                throw new ConflictException("Another request added a user with this email or account at the same time.");
+            }
+
+            throw;
+        }
+
+        return user;
+    }
 
     private Task<User?> FindIncludingDeactivatedAsync(Guid id, CancellationToken cancellationToken) =>
         _ctx.Users

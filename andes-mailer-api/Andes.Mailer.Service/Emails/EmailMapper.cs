@@ -18,6 +18,7 @@ public static class EmailMapper
     /// </remarks>
     public static Expression<Func<Email, EmailDto>> MapToEmailDtoExpression { get; } = email => new EmailDto(
         email.Id,
+        email.AuthorId,
         email.Subject,
         email.BodyHtml,
         email.StatusId,
@@ -40,6 +41,7 @@ public static class EmailMapper
     /// </summary>
     public static Expression<Func<Email, EmailSummaryDto>> MapToEmailSummaryDtoExpression { get; } = email => new EmailSummaryDto(
         email.Id,
+        email.AuthorId,
         email.Subject,
         email.StatusId,
         email.Recipients.Count,
@@ -73,6 +75,7 @@ public static class EmailMapper
 
         return new EmailDto(
             email.Id,
+            email.AuthorId,
             email.Subject,
             email.BodyHtml,
             email.StatusId,

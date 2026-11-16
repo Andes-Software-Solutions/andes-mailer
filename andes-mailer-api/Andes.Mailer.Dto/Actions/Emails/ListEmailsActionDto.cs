@@ -3,7 +3,7 @@ using FluentValidation;
 namespace Andes.Mailer.Dto.Actions.Emails;
 
 /// <summary>
-/// Selects one page of the signed-in user's emails.
+/// Selects one page of a team's emails.
 /// </summary>
 /// <param name="Page">The one-based page number. The default is 1.</param>
 /// <param name="PageSize">The maximum number of emails on a page. The default is 25.</param>

@@ -1,23 +1,37 @@
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Entity.Base;
+using Andes.Mailer.Entity.Teams;
 using Andes.Mailer.Entity.Users;
 
 namespace Andes.Mailer.Entity.Emails;
 
 /// <summary>
-/// Represents an email a user composes, with its recipients and attachments.
+/// Represents an email a team composes, with its recipients and attachments.
 /// </summary>
+/// <remarks>
+/// The email is sent from the team's service account; every member of the team can read and change it.
+/// </remarks>
 public sealed class Email : BaseModifiedEntity<Guid>
 {
     /// <summary>
-    /// Gets or sets the Entra object id of the user who composes and sends the email.
+    /// Gets or sets the id of the team the email belongs to.
     /// </summary>
-    public Guid SenderId { get; set; }
+    public Guid TeamId { get; set; }
 
     /// <summary>
-    /// Gets or sets the sender.
+    /// Gets or sets the team.
     /// </summary>
-    public User? Sender { get; set; }
+    public Team? Team { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Entra object id of the user who started the email.
+    /// </summary>
+    public Guid AuthorId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the user who started the email.
+    /// </summary>
+    public User? Author { get; set; }
 
     /// <summary>
     /// Gets or sets the subject.

@@ -1,6 +1,7 @@
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Actions.Users;
 using Andes.Mailer.Dto.Users;
+using Andes.Mailer.Entity.Teams;
 using Andes.Mailer.Repository.Sql.DbContexts;
 using Andes.Mailer.Service.Exceptions;
 using Andes.Mailer.Service.Users;
@@ -194,6 +195,140 @@ public sealed class UserServiceTests : IDisposable
 
         Assert.Equal(3, page.TotalCount);
         Assert.Equal("Ada Lovelace", Assert.Single(page.Items).FullName);
+    }
+
+    [Fact]
+    public async Task DeactivateAsync_TeamMember_DeactivatesMembershipsAndKeepsTeams()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var existing = await _fixture.AddUserAsync("ada@contoso.com");
+        await _fixture.AddTeamMemberAsync(team.Id, existing.Id, Roles.TeamAdministrator);
+
+        await using (var ctx = _fixture.CreateContext())
+        {
+            await CreateService(ctx).DeactivateAsync(existing.Id, Guid.NewGuid(), TestContext.Current.CancellationToken);
+        }
+
+        await using var verifyCtx = _fixture.CreateContext();
+        var membership = await verifyCtx.TeamMembers.IgnoreQueryFilters().SingleAsync(m => m.UserId == existing.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(_fixture.Time.GetUtcNow(), membership.DateDeactivated);
+        Assert.True(await verifyCtx.Teams.AnyAsync(t => t.Id == team.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task DeactivateAsync_MemberOfDeactivatedTeam_DeactivatesThatMembershipToo()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var existing = await _fixture.AddUserAsync("ada@contoso.com");
+        await _fixture.AddTeamMemberAsync(team.Id, existing.Id);
+        await using (var teamCtx = _fixture.CreateContext())
+        {
+            teamCtx.Remove(await teamCtx.Teams.SingleAsync(t => t.Id == team.Id, TestContext.Current.CancellationToken));
+            await teamCtx.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        await using (var ctx = _fixture.CreateContext())
+        {
+            await CreateService(ctx).DeactivateAsync(existing.Id, Guid.NewGuid(), TestContext.Current.CancellationToken);
+        }
+
+        await using var verifyCtx = _fixture.CreateContext();
+        var membership = await verifyCtx.TeamMembers.IgnoreQueryFilters().SingleAsync(m => m.UserId == existing.Id, TestContext.Current.CancellationToken);
+        Assert.NotNull(membership.DateDeactivated);
+    }
+
+    [Fact]
+    public async Task DeactivateAsync_MembershipCommittedDuringDeactivation_DeactivatesItToo()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var existing = await _fixture.AddUserAsync("ada@contoso.com");
+
+        await using (var ctx = _fixture.CreateContext())
+        {
+            // Stands in for TeamMemberService committing a membership after the memberships were read.
+            var added = false;
+            ctx.SavedChanges += (_, _) =>
+            {
+                if (added)
+                {
+                    return;
+                }
+
+                added = true;
+                using var addCtx = _fixture.CreateContext();
+                addCtx.Add(new TeamMember { TeamId = team.Id, UserId = existing.Id, RoleId = Roles.TeamMember });
+                addCtx.SaveChanges();
+            };
+
+            await CreateService(ctx).DeactivateAsync(existing.Id, Guid.NewGuid(), TestContext.Current.CancellationToken);
+        }
+
+        await using var verifyCtx = _fixture.CreateContext();
+        var membership = await verifyCtx.TeamMembers.IgnoreQueryFilters().SingleAsync(m => m.UserId == existing.Id, TestContext.Current.CancellationToken);
+        Assert.NotNull(membership.DateDeactivated);
+    }
+
+    [Fact]
+    public async Task EnsureActiveAsync_ExistingUser_ReturnsIdWithoutAskingDirectory()
+    {
+        var existing = await _fixture.AddUserAsync("ada@contoso.com");
+        await using var ctx = _fixture.CreateContext();
+
+        var id = await CreateService(ctx).EnsureActiveAsync(" ADA@contoso.com ", TestContext.Current.CancellationToken);
+
+        Assert.Equal(existing.Id, id);
+        await _directory.DidNotReceive().FindByEmailAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task EnsureActiveAsync_NewDirectoryAccount_AddsUser()
+    {
+        var account = new DirectoryUser(Guid.NewGuid(), "Grace", "Hopper", "grace@contoso.com");
+        _directory.FindByEmailAsync("grace@contoso.com", Arg.Any<CancellationToken>()).Returns(account);
+        await using var ctx = _fixture.CreateContext();
+
+        var id = await CreateService(ctx).EnsureActiveAsync("grace@contoso.com", TestContext.Current.CancellationToken);
+
+        Assert.Equal(account.Id, id);
+        Assert.Equal("Grace Hopper", (await GetAsync(id)).FullName);
+    }
+
+    [Fact]
+    public async Task EnsureActiveAsync_DeactivatedUser_ThrowsConflictAndLeavesUserDeactivated()
+    {
+        var existing = await _fixture.AddUserAsync("ada@contoso.com");
+        await _fixture.DeactivateUserAsync(existing.Id);
+        _directory.FindByEmailAsync("ada@contoso.com", Arg.Any<CancellationToken>())
+            .Returns(new DirectoryUser(existing.Id, "Ada", "Lovelace", "ada@contoso.com"));
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            CreateService(ctx).EnsureActiveAsync("ada@contoso.com", TestContext.Current.CancellationToken));
+
+        await using var verifyCtx = _fixture.CreateContext();
+        Assert.False(await verifyCtx.Users.AnyAsync(u => u.Id == existing.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task EnsureActiveAsync_AccountActiveUnderAnotherAddress_ReturnsThatUser()
+    {
+        var existing = await _fixture.AddUserAsync("ada@contoso.com");
+        _directory.FindByEmailAsync("ada.upn@contoso.com", Arg.Any<CancellationToken>())
+            .Returns(new DirectoryUser(existing.Id, "Ada", "Lovelace", "ada@contoso.com"));
+        await using var ctx = _fixture.CreateContext();
+
+        var id = await CreateService(ctx).EnsureActiveAsync("ada.upn@contoso.com", TestContext.Current.CancellationToken);
+
+        Assert.Equal(existing.Id, id);
+    }
+
+    [Fact]
+    public async Task EnsureActiveAsync_NoDirectoryAccount_ThrowsNotFound()
+    {
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            CreateService(ctx).EnsureActiveAsync("nobody@contoso.com", TestContext.Current.CancellationToken));
     }
 
     public void Dispose() => _fixture.Dispose();

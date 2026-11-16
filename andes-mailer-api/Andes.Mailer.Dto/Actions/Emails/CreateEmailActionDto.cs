@@ -7,7 +7,7 @@ namespace Andes.Mailer.Dto.Actions.Emails;
 /// </summary>
 /// <param name="Subject">The subject; may be empty while composing.</param>
 /// <param name="BodyHtml">The body as HTML; the API strips anything outside the editor's formatting before storing it.</param>
-/// <param name="Recipients">The recipients, in the order the sender entered them.</param>
+/// <param name="Recipients">The recipients, in the order they were entered.</param>
 public sealed record CreateEmailActionDto(string Subject, string BodyHtml, IReadOnlyList<EmailRecipientActionDto> Recipients);
 
 /// <summary>
