@@ -1,11 +1,11 @@
 # Users and permissions
 
-Signing in with Entra proves who someone is; it says nothing about what they may do. The API keeps its own list of users, gives them roles, and checks a permission before each change to that list, and before a document is attached to an email. This page covers the data model, the `/api/users` endpoints, how permission checks work, and the Microsoft Graph setup that adding a user needs. For how tokens are issued and validated, see [Authentication](authentication.md). For the endpoints that check `CanAttachDocuments`, see [Emails and attachments](emails-and-attachments.md).
+Signing in with Entra proves who someone is; it says nothing about what they may do. The API keeps its own list of users, gives them roles, and checks a permission before each change to that list, to a team, and to its emails. This page covers the data model, the `/api/users` endpoints, how permission checks work, and the Microsoft Graph setup that adding a user needs. For how tokens are issued and validated, see [Authentication](authentication.md). For teams and their members, see [Teams](teams.md). For the endpoints that check `ComposeTeamEmails` and `CanAttachDocuments`, see [Emails and attachments](emails-and-attachments.md).
 
 ## How it fits together
 
-- A **user** is an Entra account that someone with the `CreateUser` permission has added to Andes Mailer. The user's `Id` is the account's Entra object id (the `oid` claim in the token), so a token maps to a user row without a lookup table.
-- A **role** is a named bundle of permissions. A user can hold several roles.
+- A **user** is an Entra account that someone with the `CreateUser` permission has added to Andes Mailer, or that a team administrator added to a team (which adds them as a user first). The user's `Id` is the account's Entra object id (the `oid` claim in the token), so a token maps to a user row without a lookup table.
+- A **role** is a named bundle of permissions. Its **scope** says where it applies: `Administrator` applies across the application, while `TeamAdministrator` and `TeamMember` apply in one team. A user holds at most one global role, and one team role in each team they belong to.
 - A **permission** is one action the API checks before it runs.
 - Adding a user takes only an email address. The API asks Microsoft Graph for the account that owns it and copies the id, name, and address, so nobody types an object id by hand.
 
@@ -18,7 +18,8 @@ Application tables live in the `Core` schema. Fixed lookup data (roles, permissi
 | Table | Holds |
 | --- | --- |
 | `[Core].[User]` | One row per user |
-| `[Core].[UserRole]` | Which roles a user holds (`UserId`, `RoleId`) |
+| `[Core].[UserRole]` | Which **global** roles a user holds (`UserId`, `RoleId`). Only `Administrator` fits; a check constraint (`CK_UserRole_RoleId`) rejects team roles. |
+| `[Core].[Team]`, `[Core].[TeamMember]` | Teams, and which **team** role each user holds in each. See [Teams](teams.md#data-model). |
 | `[Core.Ref].[Role]` | The roles |
 | `[Core.Ref].[Permission]` | The permissions |
 | `[Core.Ref].[RolePermission]` | Which permissions each role grants |
@@ -36,28 +37,36 @@ Application tables live in the `Core` schema. Fixed lookup data (roles, permissi
 
 `FullName` is the first and last name joined by a space. It is computed in the DTO and has no column.
 
-Queries on `User` and `UserRole` hide deactivated rows by default (the `Deactivation` query filter). A deactivated user disappears from the list, `GET /{id}` returns 404, and their roles grant nothing.
+Queries on `User` and `UserRole` hide deactivated rows by default (the `Deactivation` query filter). A deactivated user disappears from the list, `GET /{id}` returns 404, and their roles grant nothing. Their team memberships are deactivated with them; see [Deactivate a user](#deactivate-a-user).
 
 ### Roles and permissions
 
-| Role | Id | Permissions |
-| --- | --- | --- |
-| `Administrator` | 1 | All seven |
-| `TeamAdministrator` | 2 | `CreateTeamUser`, `ModifyTeamUser`, `DeactivateTeamUser`, `CanAttachDocuments` |
+| Role | Id | Scope | Permissions |
+| --- | --- | --- | --- |
+| `Administrator` | 1 | Global | All twelve. In a team, this includes its emails. |
+| `TeamAdministrator` | 2 | One team | `CreateTeamUser`, `ModifyTeamUser`, `DeactivateTeamUser`, `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails` |
+| `TeamMember` | 3 | One team | `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails` |
 
 | Permission | Id | Checked by |
 | --- | --- | --- |
 | `CreateUser` | 1 | `POST /api/users` |
 | `ModifyUser` | 2 | `PUT /api/users/{id}` |
 | `DeactivateUser` | 3 | `DELETE /api/users/{id}` |
-| `CreateTeamUser` | 4 | Nothing yet |
-| `ModifyTeamUser` | 5 | Nothing yet |
-| `DeactivateTeamUser` | 6 | Nothing yet |
-| `CanAttachDocuments` | 7 | `POST` and `DELETE` on `/api/emails/{emailId}/attachments`: uploading a document to a draft and removing one |
+| `CreateTeamUser` | 4 | `POST /api/teams/{teamId}/members`: adding a member to a team |
+| `ModifyTeamUser` | 5 | `PUT /api/teams/{teamId}/members/{userId}`: changing a member's role |
+| `DeactivateTeamUser` | 6 | `DELETE /api/teams/{teamId}/members/{userId}`: removing a member |
+| `CanAttachDocuments` | 7 | `POST` and `DELETE` on `/api/teams/{teamId}/emails/{emailId}/attachments`: uploading a document to a draft and removing one |
+| `CreateTeam` | 8 | `POST /api/teams` |
+| `ModifyTeam` | 9 | `PUT /api/teams/{teamId}` |
+| `DeactivateTeam` | 10 | `DELETE /api/teams/{teamId}` |
+| `ViewTeam` | 11 | `GET /api/teams/{teamId}` and `GET` on `/api/teams/{teamId}/members` |
+| `ComposeTeamEmails` | 12 | Every route under `/api/teams/{teamId}/emails`, including attachment reads |
 
-`CanAttachDocuments` guards only the two attachment writes. Reading, downloading, and every other email route need no permission, because an email is visible only to its sender anyway. The migration `*_AddEmailsAndAttachments.cs` adds the permission and both role grants. A user with no role, such as one you just added or reactivated, cannot attach documents until someone grants a role. See [Emails and attachments](emails-and-attachments.md#attachments).
+Team creation, editing, and deactivation (8 to 10) are held by `Administrator` only, so a team administrator can manage who is in their team but not the team itself. `GET /api/teams` needs no permission; it lists the teams the caller belongs to, or every team for an `Administrator`.
 
-The enums are `Roles` and `Permissions` in `Andes.Mailer.Common/Enums/`. The reference rows belong to the code, not to operators: they are seeded with `HasData`, so a change to a role's permissions ships as a new migration.
+The permissions that guard team routes are checked **in the team**: a `TeamMember` in Team A holds nothing in Team B. A user with no role and no team, such as one you just added or reactivated, can do nothing beyond the read endpoints of `/api/users` until someone adds them to a team. See [Teams](teams.md#how-team-access-is-checked) and [Emails and attachments](emails-and-attachments.md#attachments).
+
+The enums are `Roles` and `Permissions` in `Andes.Mailer.Common/Enums/`, and `RoleScopes` in `Andes.Mailer.Common/Constants/Users/` lists which roles are global and which are team roles. The reference rows belong to the code, not to operators: they are seeded with `HasData`, so a change to a role's permissions ships as a new migration. The team grants arrive in the migration `*_AddTeams.cs`.
 
 ### Seed data
 
@@ -145,7 +154,9 @@ The API trims and lowercases the address, then looks the account up in Microsoft
 | 404 | No directory account owns the address. |
 | 409 | An active user already has the address, the directory account is already a user under a different address, or another request added the same user at the same moment. |
 
-**Reactivation.** The key is the Entra object id, so adding a deactivated person again reuses their row instead of creating a second one. The API clears `DateDeactivated` and refreshes the name and address from the directory. The reactivated user starts with **no roles**, because deactivation revoked them; see [Known limitations](#known-limitations).
+**Reactivation.** The key is the Entra object id, so adding a deactivated person again reuses their row instead of creating a second one. The API clears `DateDeactivated` and refreshes the name and address from the directory. The reactivated user starts with **no roles and no teams**, because deactivation revoked them; see [Known limitations](#known-limitations).
+
+**Adding through a team.** A team administrator who [adds a member](teams.md#add-a-member) by email also adds the person as a user, with the same Graph lookup, and needs no `CreateUser`. That path never reactivates: it returns 409 for a deactivated user, so only someone with `CreateUser` can undo a deactivation.
 
 ### Update a user
 
@@ -168,7 +179,7 @@ Only the name changes; the email comes from the directory and cannot be edited h
 
 ### Deactivate a user
 
-`DELETE /api/users/{id}` soft-deletes the user: it stamps `DateDeactivated` and deletes the user's `UserRole` rows, in one save. The user row stays, so the history and the object id are preserved.
+`DELETE /api/users/{id}` soft-deletes the user: it stamps `DateDeactivated`, deletes the user's `UserRole` rows, and deactivates all their `TeamMember` rows, in one save. That includes memberships in teams that are already deactivated, so reactivating a team later cannot bring back someone deactivated in the meantime. The user row stays, so the history and the object id are preserved, and so do the emails they started (`authorId`).
 
 | Status | When |
 | --- | --- |
@@ -177,19 +188,36 @@ Only the name changes; the email comes from the directory and cannot be edited h
 | 404 | No active user has that id. |
 | 409 | The caller is deactivating themselves, or the user changed during the operation. |
 
-Self-deactivation is blocked so the last administrator cannot lock everyone out by accident.
+Self-deactivation is blocked so the last administrator cannot lock everyone out by accident. Deactivating a user can leave a team without a team administrator; see [The last team administrator](teams.md#the-last-team-administrator).
 
 ## How permission checks work
 
-`PermissionEndpointFilter` (`Andes.Mailer.Api/Filters/`) runs on each write endpoint, before request validation and the handler:
+There are two filters, one for each scope of role. Both run before request validation and the handler.
+
+### Global permissions
+
+`PermissionEndpointFilter` (`Andes.Mailer.Api/Filters/`) guards the `/api/users` writes and `POST`, `PUT`, and `DELETE` on `/api/teams`:
 
 1. It reads the caller's `oid` claim. If the claim is missing or not a GUID, the request fails with 403.
-2. It asks `IPermissionService` whether the user holds the endpoint's permission through any role (`UserRole` joined to `RolePermission`).
+2. It asks `IPermissionService` whether the user holds the endpoint's permission through a global role (`UserRole` joined to `RolePermission`).
 3. If not, it returns a 403 Problem Details response saying which permission is required.
 
-Because the check runs on every request and reads the database, a role change takes effect on the caller's next call; there is nothing to wait out in the token. A deactivated or unknown user holds no permissions.
+### Team permissions
 
-To protect a new endpoint, add `.AddEndpointFilter(new PermissionEndpointFilter(Permissions.X))` to it. Add a new permission as an enum value and a migration that seeds it and the role grants.
+`TeamPermissionEndpointFilter` guards every route under `/api/teams/{teamId}` except the three team writes above. It looks at the caller's membership in that team first, then at their global roles:
+
+| Caller | Result |
+| --- | --- |
+| A member whose team role grants the permission, or a global role that grants it | Proceeds |
+| A member whose team role does not grant it | 403 naming the permission |
+| Not a member, with no global grant | 404, so the API never confirms a team exists |
+| Any caller, when the team is missing or deactivated | 404, even for an `Administrator` |
+
+[Teams](teams.md#how-team-access-is-checked) walks through the cases.
+
+Both checks run on every request and read the database, so a role or membership change takes effect on the caller's next call; there is nothing to wait out in the token. A deactivated or unknown user holds no permissions.
+
+To protect a new endpoint, add `.AddEndpointFilter(new PermissionEndpointFilter(Permissions.X))` to it, or `new TeamPermissionEndpointFilter(Permissions.X)` for a route under `/api/teams/{teamId:guid}`. Add a new permission as an enum value and a migration that seeds it and the role grants.
 
 ## Microsoft Graph setup
 
@@ -221,9 +249,10 @@ dotnet ef database update --project Andes.Mailer.Repository --startup-project An
 
 `--startup-project` is required because `dotnet ef` starts the host to build the `DbContext`. This creates the tables and inserts the seed data above. The API does not apply migrations when it starts, so run this again after pulling a new migration.
 
+The `AddTeams` migration **deletes every existing email, recipient, and attachment row** and removes global `TeamAdministrator` grants. It cannot be undone; read [Upgrading](teams.md#upgrading-the-addteams-migration) before you apply it to a database you care about.
+
 ## Known limitations
 
-- **No role management.** No endpoint grants or revokes roles. Until one exists, change `[Core].[UserRole]` with SQL. A reactivated user starts with no roles, so an administrator has to re-grant them the same way.
-- **Team permissions do nothing yet.** Teams do not exist, so `CreateTeamUser`, `ModifyTeamUser`, and `DeactivateTeamUser` are seeded, but no endpoint checks them. The `TeamAdministrator` role holds only these three and `CanAttachDocuments`, so today its one working grant is `CanAttachDocuments`.
+- **No management of the global role.** No endpoint grants or revokes `Administrator`. Until one exists, change `[Core].[UserRole]` with SQL. Team roles are managed through [the member endpoints](teams.md#team-members). A reactivated user starts with no roles and no teams, so an administrator has to re-grant the global role the same way and add them to their teams again.
 - **Graph failures return 500.** A Graph outage, a missing consent, or a bad credential surfaces as a 500 from `POST /api/users`, not a specific error. The cause is in the API logs.
 - **No UI.** The UI calls only `GET /api/users/me`; it has no screens for the other endpoints yet.

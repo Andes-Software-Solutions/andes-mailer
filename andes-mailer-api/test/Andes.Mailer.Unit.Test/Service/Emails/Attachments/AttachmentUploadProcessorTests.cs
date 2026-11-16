@@ -273,7 +273,8 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
             BlobName = $"email/{id:N}",
             StatusId = AttachmentStatuses.Pending,
         };
-        await _fixture.AddEmailAsync(sender.Id, EmailStatuses.Draft, attachment);
+        var team = await _fixture.AddTeamAsync();
+        await _fixture.AddEmailAsync(team.Id, sender.Id, EmailStatuses.Draft, attachment);
         if (staged)
         {
             await using var file = new MemoryStream(TestFiles.Pdf);

@@ -27,7 +27,8 @@ public sealed class EmailServiceTests : IDisposable
     [Fact]
     public async Task CreateAsync_Draft_StoresSanitizedBodyAndResolvedRecipientsInOrder()
     {
-        var sender = await _fixture.AddUserAsync("ada@contoso.com");
+        var team = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync("ada@contoso.com");
         var graceId = Guid.NewGuid();
         _directory.FindByEmailsAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<string, DirectoryUser> { ["grace@contoso.com"] = new(graceId, "Grace", "Hopper", "grace@contoso.com") });
@@ -37,10 +38,11 @@ public sealed class EmailServiceTests : IDisposable
             [new("zed@external.org", RecipientTypes.Cc), new(" GRACE@contoso.com ", RecipientTypes.To), new("amy@external.org", RecipientTypes.To)]);
         await using var ctx = _fixture.CreateContext();
 
-        var created = await CreateService(ctx).CreateAsync(sender.Id, action, TestContext.Current.CancellationToken);
+        var created = await CreateService(ctx).CreateAsync(team.Id, author.Id, action, TestContext.Current.CancellationToken);
         await using var readCtx = _fixture.CreateContext();
-        var reloaded = await CreateService(readCtx).GetAsync(created.Id, sender.Id, TestContext.Current.CancellationToken);
+        var reloaded = await CreateService(readCtx).GetAsync(team.Id, created.Id, TestContext.Current.CancellationToken);
 
+        Assert.Equal(author.Id, reloaded.AuthorId);
         Assert.Equal("Hello", reloaded.Subject);
         Assert.Equal("<p>Hi</p>", reloaded.BodyHtml);
         Assert.Equal(EmailStatuses.Draft, reloaded.Status);
@@ -55,35 +57,55 @@ public sealed class EmailServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateAsync_CallerNotAUser_ThrowsForbidden()
+    public async Task GetAsync_AnotherTeamsEmail_ThrowsNotFound()
     {
+        var team = await _fixture.AddTeamAsync();
+        var otherTeam = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync("ada@contoso.com");
+        var email = await _fixture.AddEmailAsync(team.Id, author.Id);
         await using var ctx = _fixture.CreateContext();
 
-        await Assert.ThrowsAsync<ForbiddenException>(() =>
-            CreateService(ctx).CreateAsync(Guid.NewGuid(), new CreateEmailActionDto("Hi", string.Empty, []), TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<NotFoundException>(() => CreateService(ctx).GetAsync(otherTeam.Id, email.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task GetAsync_AnotherUsersEmail_ThrowsNotFound()
+    public async Task UpdateAsync_TeammatesDraft_ReplacesContentAndKeepsAuthor()
     {
-        var owner = await _fixture.AddUserAsync("ada@contoso.com");
-        var other = await _fixture.AddUserAsync("bob@contoso.com");
-        var email = await _fixture.AddEmailAsync(owner.Id);
+        var team = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync("ada@contoso.com");
+        var created = await CreateDraftAsync(team.Id, author.Id);
         await using var ctx = _fixture.CreateContext();
 
-        await Assert.ThrowsAsync<NotFoundException>(() => CreateService(ctx).GetAsync(email.Id, other.Id, TestContext.Current.CancellationToken));
+        var updated = await CreateService(ctx).UpdateAsync(team.Id, created.Id, new UpdateEmailActionDto("Second", "<p>Two</p>", [], created.Version), TestContext.Current.CancellationToken);
+
+        Assert.Equal("Second", updated.Subject);
+        Assert.Equal(author.Id, updated.AuthorId);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_AnotherTeamsDraft_ThrowsNotFound()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var otherTeam = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync("ada@contoso.com");
+        var created = await CreateDraftAsync(team.Id, author.Id);
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            CreateService(ctx).UpdateAsync(otherTeam.Id, created.Id, new UpdateEmailActionDto("x", string.Empty, [], created.Version), TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task UpdateAsync_ChangedRecipients_KeepsStayingRowsAndResolvesOnlyNewAddresses()
     {
-        var sender = await _fixture.AddUserAsync("ada@contoso.com");
-        var created = await CreateDraftAsync(sender.Id, new EmailRecipientActionDto("amy@external.org", RecipientTypes.To), new EmailRecipientActionDto("bob@external.org", RecipientTypes.Cc));
+        var team = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync("ada@contoso.com");
+        var created = await CreateDraftAsync(team.Id, author.Id, new EmailRecipientActionDto("amy@external.org", RecipientTypes.To), new EmailRecipientActionDto("bob@external.org", RecipientTypes.Cc));
         _directory.ClearReceivedCalls();
         await using var ctx = _fixture.CreateContext();
         var action = new UpdateEmailActionDto("Second", "<p>Two</p>", [new("bob@external.org", RecipientTypes.To), new("cat@external.org", RecipientTypes.Bcc)], created.Version);
 
-        var updated = await CreateService(ctx).UpdateAsync(created.Id, sender.Id, action, TestContext.Current.CancellationToken);
+        var updated = await CreateService(ctx).UpdateAsync(team.Id, created.Id, action, TestContext.Current.CancellationToken);
 
         Assert.Equal(["bob@external.org", "cat@external.org"], updated.Recipients.Select(r => r.Address));
         Assert.Equal([RecipientTypes.To, RecipientTypes.Bcc], updated.Recipients.Select(r => r.Type));
@@ -97,34 +119,37 @@ public sealed class EmailServiceTests : IDisposable
     [Fact]
     public async Task UpdateAsync_StaleVersion_ThrowsConflict()
     {
-        var sender = await _fixture.AddUserAsync("ada@contoso.com");
-        var created = await CreateDraftAsync(sender.Id);
+        var team = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync("ada@contoso.com");
+        var created = await CreateDraftAsync(team.Id, author.Id);
         await using var ctx = _fixture.CreateContext();
         var stale = Convert.ToBase64String(new byte[8]);
 
         await Assert.ThrowsAsync<ConflictException>(() =>
-            CreateService(ctx).UpdateAsync(created.Id, sender.Id, new UpdateEmailActionDto("x", string.Empty, [], stale), TestContext.Current.CancellationToken));
+            CreateService(ctx).UpdateAsync(team.Id, created.Id, new UpdateEmailActionDto("x", string.Empty, [], stale), TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task UpdateAsync_SentEmail_ThrowsNotEditable()
     {
-        var sender = await _fixture.AddUserAsync("ada@contoso.com");
-        var email = await _fixture.AddEmailAsync(sender.Id, EmailStatuses.Sent);
+        var team = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync("ada@contoso.com");
+        var email = await _fixture.AddEmailAsync(team.Id, author.Id, EmailStatuses.Sent);
         await using var ctx = _fixture.CreateContext();
 
         await Assert.ThrowsAsync<EmailNotEditableException>(() =>
-            CreateService(ctx).UpdateAsync(email.Id, sender.Id, new UpdateEmailActionDto("x", string.Empty, [], Convert.ToBase64String(email.Version)), TestContext.Current.CancellationToken));
+            CreateService(ctx).UpdateAsync(team.Id, email.Id, new UpdateEmailActionDto("x", string.Empty, [], Convert.ToBase64String(email.Version)), TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task DeleteAsync_OwnEmail_DeactivatesItAndHidesItsRecipients()
+    public async Task DeleteAsync_TeamEmail_DeactivatesItAndHidesItsRecipients()
     {
-        var sender = await _fixture.AddUserAsync("ada@contoso.com");
-        var created = await CreateDraftAsync(sender.Id, new EmailRecipientActionDto("amy@external.org", RecipientTypes.To));
+        var team = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync("ada@contoso.com");
+        var created = await CreateDraftAsync(team.Id, author.Id, new EmailRecipientActionDto("amy@external.org", RecipientTypes.To));
         await using var ctx = _fixture.CreateContext();
 
-        await CreateService(ctx).DeleteAsync(created.Id, sender.Id, TestContext.Current.CancellationToken);
+        await CreateService(ctx).DeleteAsync(team.Id, created.Id, TestContext.Current.CancellationToken);
 
         await using var readCtx = _fixture.CreateContext();
         var row = await readCtx.Emails.IgnoreQueryFilters().SingleAsync(e => e.Id == created.Id, TestContext.Current.CancellationToken);
@@ -133,20 +158,40 @@ public sealed class EmailServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ListAsync_OwnEmails_ReturnsOnlyCallersMostRecentFirst()
+    public async Task ListAsync_TeamEmails_ReturnsEveryAuthorsOfTheTeamOnlyMostRecentFirst()
     {
-        var sender = await _fixture.AddUserAsync("ada@contoso.com");
-        var other = await _fixture.AddUserAsync("bob@contoso.com");
-        var older = await _fixture.AddEmailAsync(sender.Id);
+        var team = await _fixture.AddTeamAsync();
+        var otherTeam = await _fixture.AddTeamAsync();
+        var ada = await _fixture.AddUserAsync("ada@contoso.com");
+        var bob = await _fixture.AddUserAsync("bob@contoso.com");
+        var older = await _fixture.AddEmailAsync(team.Id, ada.Id);
         _fixture.Time.Advance(TimeSpan.FromMinutes(1));
-        var newer = await _fixture.AddEmailAsync(sender.Id);
-        await _fixture.AddEmailAsync(other.Id);
+        var newer = await _fixture.AddEmailAsync(team.Id, bob.Id);
+        await _fixture.AddEmailAsync(otherTeam.Id, ada.Id);
         await using var ctx = _fixture.CreateContext();
 
-        var page = await CreateService(ctx).ListAsync(sender.Id, new ListEmailsActionDto(), TestContext.Current.CancellationToken);
+        var page = await CreateService(ctx).ListAsync(team.Id, new ListEmailsActionDto(), TestContext.Current.CancellationToken);
 
         Assert.Equal(2, page.TotalCount);
         Assert.Equal([newer.Id, older.Id], page.Items.Select(e => e.Id));
+        Assert.Equal([bob.Id, ada.Id], page.Items.Select(e => e.AuthorId));
+    }
+
+    [Fact]
+    public async Task GetAsync_DeactivatedTeam_ThrowsNotFound()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync("ada@contoso.com");
+        var email = await _fixture.AddEmailAsync(team.Id, author.Id);
+        await using (var deactivateCtx = _fixture.CreateContext())
+        {
+            deactivateCtx.Remove(await deactivateCtx.Teams.SingleAsync(t => t.Id == team.Id, TestContext.Current.CancellationToken));
+            await deactivateCtx.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<NotFoundException>(() => CreateService(ctx).GetAsync(team.Id, email.Id, TestContext.Current.CancellationToken));
     }
 
     public void Dispose() => _fixture.Dispose();
@@ -155,11 +200,11 @@ public sealed class EmailServiceTests : IDisposable
 
     private EmailService CreateService(AndesMailerDbContext ctx) => new(ctx, _directory);
 
-    private async Task<EmailDto> CreateDraftAsync(Guid senderId, params EmailRecipientActionDto[] recipients)
+    private async Task<EmailDto> CreateDraftAsync(Guid teamId, Guid authorId, params EmailRecipientActionDto[] recipients)
     {
         await using var ctx = _fixture.CreateContext();
 
-        return await CreateService(ctx).CreateAsync(senderId, new CreateEmailActionDto("First", "<p>One</p>", recipients), TestContext.Current.CancellationToken);
+        return await CreateService(ctx).CreateAsync(teamId, authorId, new CreateEmailActionDto("First", "<p>One</p>", recipients), TestContext.Current.CancellationToken);
     }
 
     #endregion

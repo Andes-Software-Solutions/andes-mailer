@@ -1,10 +1,12 @@
 # Emails and attachments
 
-Andes Mailer will send email on behalf of its users, and a message takes work to prepare: a subject, a formatted body, recipients, and documents. The API stores that work as a **draft** so a user can build it up over several requests, leave, and come back. This page covers the draft data model, the `/api/emails` endpoints, how attachment uploads work end to end, and the configuration and local setup that uploads need. For who may do what, see [Users and permissions](users-and-permissions.md). For how tokens are issued and validated, see [Authentication](authentication.md).
+Andes Mailer will send email on behalf of teams, and a message takes work to prepare: a subject, a formatted body, recipients, and documents. The API stores that work as a **draft** so the team can build it up over several requests, leave, and come back. This page covers the draft data model, the `/api/teams/{teamId}/emails` endpoints, how attachment uploads work end to end, and the configuration and local setup that uploads need. For teams and who may do what in them, see [Teams](teams.md) and [Users and permissions](users-and-permissions.md). For how tokens are issued and validated, see [Authentication](authentication.md).
 
 ## How it fits together
 
-- An **email** is a draft owned by its sender. Only the sender can see it; to anyone else it does not exist.
+- An **email** is a draft that belongs to a [team](teams.md). Every member of the team can view, edit, attach documents to, and delete any of the team's drafts, whoever started it. To anyone outside the team it does not exist. A global `Administrator` can work in every team's emails.
+- The email records its **author**, the team member who started the draft, so the UI can show who it was. The author gets no special rights.
+- The team's service account is the email's sender. Nothing sends yet, so this matters later; see [Teams](teams.md#how-it-fits-together).
 - A **recipient** is an address under the To, Cc, or Bcc header. The API asks Microsoft Graph who owns each new address, so the UI can later show names for people in your organization. Any other address is kept as plain text.
 - An **attachment** is a document added to a draft. The request that receives it returns at once; a background job copies the file to Azure Blob Storage, and the client polls for the result. This keeps a slow upload to storage from holding the request open or failing the user's save.
 - A draft never leaves the `Draft` status yet. `Sent` exists in the model so a later feature can use it without a migration.
@@ -22,7 +24,7 @@ These are not built, and the API makes no provision for them:
 
 ## Data model
 
-Application tables live in `Core`; fixed lookup data lives in `Core.Ref`. All of them arrive in the migration `Andes.Mailer.Repository/Sql/Migrations/*_AddEmailsAndAttachments.cs`.
+Application tables live in `Core`; fixed lookup data lives in `Core.Ref`. All of them arrive in the migration `Andes.Mailer.Repository/Sql/Migrations/*_AddEmailsAndAttachments.cs`. The later migration `*_AddTeams.cs` gives each email a team and an author, and **deletes every email that existed before it**; see [Upgrading](teams.md#upgrading-the-addteams-migration).
 
 | Table | Holds |
 | --- | --- |
@@ -41,13 +43,14 @@ The enums are in `Andes.Mailer.Common/Enums/`. Like the roles and permissions, t
 | Column | Notes |
 | --- | --- |
 | `Id` | A GUID the API generates. |
-| `SenderId` | The Entra object id of the author, a foreign key to `[Core].[User]`. Only someone added to the application can create an email. |
+| `TeamId` | The team the email belongs to, a foreign key to `[Core].[Team]`. Every query for emails filters on it. |
+| `AuthorId` | The Entra object id of the team member who started the draft, a foreign key to `[Core].[User]`. Renamed from `SenderId`; it no longer limits who can see or change the email. |
 | `Subject` | Up to 255 characters, trimmed. May be empty. |
 | `BodyHtml` | The sanitized HTML body, `nvarchar(max)`. The request may carry up to 1,000,000 characters. |
 | `StatusId` | `Draft` today. `Sent` is reserved until sending is built. |
 | `DateCreated`, `DateModified`, `DateDeactivated`, `Version` | The same audit, soft-delete, and `rowversion` columns as [`[Core].[User]`](users-and-permissions.md#coreuser). |
 
-Deleting an email soft-deletes it. Its recipients and attachments disappear from queries with it (their query filters follow the email's `DateDeactivated`), but their rows and any stored documents stay; see [Known limitations](#known-limitations).
+Deactivating the team hides its emails with it (the `TeamDeactivation` query filter), without touching their rows. Deleting an email soft-deletes it. Its recipients and attachments disappear from queries with it (their query filters follow the email's `DateDeactivated`), but their rows and any stored documents stay; see [Known limitations](#known-limitations).
 
 ### `[Core].[EmailRecipient]`
 
@@ -77,25 +80,32 @@ A recipient has no soft delete. When you save a draft without an address it had 
 
 All routes need a token with the `access_as_user` scope, like every other endpoint. Errors are Problem Details responses. Enums travel by **name** in both directions (`"Cc"`, `"Pending"`), never by number, so a client does not depend on the stored values. Property names are camelCase.
 
-Every email route is scoped to the caller. An email that exists but belongs to someone else returns the same 404 as one that does not exist, so the API never confirms that another user's draft is there.
+Every email route sits under `/api/teams/{teamId}`, and a check on the team runs first (see [How team access is checked](teams.md#how-team-access-is-checked)). It needs the `ComposeTeamEmails` permission **in that team**:
+
+- A caller who is not in the team, or a team that is missing or deactivated, gets 404. An email that exists in another team returns the same 404 as one that does not exist, so the API never confirms that another team's draft is there.
+- A caller who is in the team but whose role lacks the permission gets 403. Both team roles hold it today, so in practice this does not happen yet.
+- A global `Administrator` passes the check for every active team, member or not.
+
+The routes moved from `/api/emails` to `/api/teams/{teamId}/emails`. **This is a breaking change**: the old routes no longer exist.
 
 ### Emails
 
 | Method and route | Success | Other statuses |
 | --- | --- | --- |
-| `GET /api/emails` | 200 with one page of the caller's emails, most recently changed first | 400 for a bad `page` or `pageSize` |
-| `GET /api/emails/{id}` | 200 with the email, its recipients, and its attachments | 404 |
-| `POST /api/emails` | 201 with the email and a `Location` of `/api/emails/{id}` | 400; 403 if the caller is not a user of the application |
-| `PUT /api/emails/{id}` | 200 with the updated email | 400; 404; 409 if the `version` is stale or the email is no longer a draft |
-| `DELETE /api/emails/{id}` | 204 | 404; 409 if another request changed the email at the same moment |
+| `GET /api/teams/{teamId}/emails` | 200 with one page of the team's emails, most recently changed first | 400 for a bad `page` or `pageSize`; 403; 404 |
+| `GET /api/teams/{teamId}/emails/{id}` | 200 with the email, its recipients, and its attachments | 403; 404 |
+| `POST /api/teams/{teamId}/emails` | 201 with the email and a `Location` of `/api/teams/{teamId}/emails/{id}` | 400; 403; 404 |
+| `PUT /api/teams/{teamId}/emails/{id}` | 200 with the updated email | 400; 403; 404; 409 if the `version` is stale or the email is no longer a draft |
+| `DELETE /api/teams/{teamId}/emails/{id}` | 204 | 403; 404; 409 if another request changed the email at the same moment |
 
-None of these routes needs a permission. Listing takes the same `page` (default 1) and `pageSize` (default 25, at most 100) as [`GET /api/users`](users-and-permissions.md#list-users) and returns the same wrapper.
+The signed-in user becomes the email's `authorId` on create. Any member of the team can then edit or delete the draft, not only its author. Listing takes the same `page` (default 1) and `pageSize` (default 25, at most 100) as [`GET /api/users`](users-and-permissions.md#list-users) and returns the same wrapper.
 
 ### The email object
 
 ```json
 {
   "id": "0199f7a2-5d1e-7c3b-9a44-1f2e3d4c5b6a",
+  "authorId": "4ee09cb0-d7e7-4be4-b82f-2674695eb9df",
   "subject": "Quarterly report",
   "bodyHtml": "<p>Hello <strong>team</strong>,</p>",
   "status": "Draft",
@@ -110,12 +120,14 @@ None of these routes needs a permission. Listing takes the same `page` (default 
 }
 ```
 
-The list returns a summary of each email instead: `id`, `subject`, `status`, `recipientCount`, `attachmentCount`, `dateCreated`, and `dateModified`.
+`authorId` is the Entra object id of the team member who started the draft. Look the name up in [the team's members](teams.md#team-members); a member who has since left the team still has a user row, but no longer appears in that list.
+
+The list returns a summary of each email instead: `id`, `authorId`, `subject`, `status`, `recipientCount`, `attachmentCount`, `dateCreated`, and `dateModified`.
 
 ### Create and update a draft
 
 ```http
-POST /api/emails
+POST /api/teams/0199fa10-3c4d-7e21-b6a0-9d8c7b6a5f40/emails
 Content-Type: application/json
 
 {
@@ -128,7 +140,7 @@ Content-Type: application/json
 }
 ```
 
-`PUT /api/emails/{id}` takes the same fields plus the `version` you last read. It **replaces** the subject, body, and recipients: send the full list each time, because an address you leave out is removed. It does not touch attachments, which have their own routes.
+`PUT /api/teams/{teamId}/emails/{id}` takes the same fields plus the `version` you last read. It **replaces** the subject, body, and recipients: send the full list each time, because an address you leave out is removed. It does not touch attachments, which have their own routes.
 
 The rules, for both:
 
@@ -141,7 +153,7 @@ The rules, for both:
 | `recipients[].type` | `To`, `Cc`, or `Bcc`. |
 | `version` (update only) | The base64 row version from the last response, decoding to 8 bytes. |
 
-The update applies only if the row still has the `version` you sent. If anyone changed the email in between, such as a second tab, the API returns 409 and you read the email again before retrying. Without this, two editors would silently overwrite each other. Attachment changes do not touch the email's version, so an upload finishing never causes a conflict. A `Sent` email is also a 409: only a draft can change.
+The update applies only if the row still has the `version` you sent. If anyone changed the email in between, such as a second tab or another member of the team, the API returns 409 and you read the email again before retrying. Without this, two editors would silently overwrite each other. Attachment changes do not touch the email's version, so an upload finishing never causes a conflict. A `Sent` email is also a 409: only a draft can change.
 
 ### Body sanitization
 
@@ -166,18 +178,18 @@ The lookup happens at save time. An address that had no account when you added i
 
 ## Attachments
 
-Documents go in as attachments, under `/api/emails/{emailId}/attachments`. The upload is the one place the API does work after it has answered, so it is the part worth understanding before you build on it.
+Documents go in as attachments, under `/api/teams/{teamId}/emails/{emailId}/attachments`. The upload is the one place the API does work after it has answered, so it is the part worth understanding before you build on it.
 
 ### Endpoints
 
-| Method and route | Permission | Success | Other statuses |
+| Method and route | Permission in the team | Success | Other statuses |
 | --- | --- | --- | --- |
-| `POST /api/emails/{emailId}/attachments` | `CanAttachDocuments` | 202 with the attachment and a `Location` of the new attachment | 400, 403, 404, 409 |
-| `GET /api/emails/{emailId}/attachments/{id}` | None | 200 with the attachment | 404 |
-| `GET /api/emails/{emailId}/attachments/{id}/content` | None | 200 with the file | 404; 409 until the status is `Uploaded` |
-| `DELETE /api/emails/{emailId}/attachments/{id}` | `CanAttachDocuments` | 204 | 403, 404, 409 |
+| `POST /api/teams/{teamId}/emails/{emailId}/attachments` | `ComposeTeamEmails` and `CanAttachDocuments` | 202 with the attachment and a `Location` of the new attachment | 400, 403, 404, 409 |
+| `GET /api/teams/{teamId}/emails/{emailId}/attachments/{id}` | `ComposeTeamEmails` | 200 with the attachment | 403, 404 |
+| `GET /api/teams/{teamId}/emails/{emailId}/attachments/{id}/content` | `ComposeTeamEmails` | 200 with the file | 403; 404; 409 until the status is `Uploaded` |
+| `DELETE /api/teams/{teamId}/emails/{emailId}/attachments/{id}` | `ComposeTeamEmails` and `CanAttachDocuments` | 204 | 403, 404, 409 |
 
-`POST` and `DELETE` fail with 403 when the caller lacks `CanAttachDocuments` (see [Users and permissions](users-and-permissions.md#roles-and-permissions)). They return 409 when the email is no longer a draft. A 404 means the email or attachment is not yours or does not exist.
+The team check from [Endpoints](#endpoints) runs first. `POST` and `DELETE` then fail with 403 when the caller lacks `CanAttachDocuments` in the team (see [Users and permissions](users-and-permissions.md#roles-and-permissions)); both team roles hold it. They return 409 when the email is no longer a draft. A 404 means the team, the email, or the attachment is not the caller's to see or does not exist. Any member of the team can upload to, download from, and remove attachments from any of its drafts.
 
 ### The attachment object
 
@@ -199,7 +211,7 @@ Documents go in as attachments, under `/api/emails/{emailId}/attachments`. The u
 1. **Send the file** as `multipart/form-data` in a field named `file`.
 
    ```http
-   POST /api/emails/0199f7a2-5d1e-7c3b-9a44-1f2e3d4c5b6a/attachments
+   POST /api/teams/0199fa10-3c4d-7e21-b6a0-9d8c7b6a5f40/emails/0199f7a2-5d1e-7c3b-9a44-1f2e3d4c5b6a/attachments
    Content-Type: multipart/form-data; boundary=----x
 
    ------x
@@ -340,14 +352,15 @@ Uploads need a blob store. [Azurite](https://learn.microsoft.com/azure/storage/c
 
    `/health/ready` reports `blob` as healthy once the container exists.
 
-Calling the upload routes needs `CanAttachDocuments`. The seeded administrator has it; a user you add with no role does not.
+Calling the email routes needs a [team](teams.md): create one as the seeded administrator, then add members. The seeded administrator has every permission in every team; a user you add with no team has none. After you apply `AddTeams` to a database that already holds drafts, they are gone and their blobs are orphaned in the `attachments` container; see [Upgrading](teams.md#upgrading-the-addteams-migration).
 
 `dotnet test` needs no setup beyond Docker. The integration suite starts its own Azurite container (`mcr.microsoft.com/azure-storage/azurite:3.37.0`, pinned so an emulator release cannot change a run, with `--skipApiVersionCheck`) once for the whole run, next to the SQL Server container.
 
 ## Known limitations
 
-- **No sending.** Nothing moves a draft to `Sent`; the status is there for the sending feature.
-- **Deleting an email leaves its documents in storage.** `DELETE /api/emails/{id}` soft-deletes the email, and its recipient and attachment rows with it as far as queries go, but it does not delete the blobs. Remove attachments first if the documents must go.
+- **No sending.** Nothing moves a draft to `Sent`; the status is there for the sending feature. The team's service account will be the sender.
+- **No per-author protection.** Any team member can edit or delete a draft another member started. There is no lock, so two members editing at once is caught only by the `version` check, as a 409.
+- **Deleting an email leaves its documents in storage.** `DELETE /api/teams/{teamId}/emails/{id}` soft-deletes the email, and its recipient and attachment rows with it as far as queries go, but it does not delete the blobs. Remove attachments first if the documents must go.
 - **A single instance only.** See [Scaling out](#scaling-out).
 - **No malware scanning.** The content check confirms a file's type, not that it is safe. Treat a download as untrusted.
 - **Recipient names do not refresh.** A recipient's `userId` and `displayName` are set when the address is added.

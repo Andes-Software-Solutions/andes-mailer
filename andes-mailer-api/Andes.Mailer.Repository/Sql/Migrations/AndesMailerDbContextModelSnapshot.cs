@@ -142,6 +142,9 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("BodyHtml")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -155,9 +158,6 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.Property<DateTimeOffset?>("DateModified")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<Guid>("SenderId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<int>("StatusId")
                         .HasColumnType("int");
 
@@ -165,6 +165,9 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<byte[]>("Version")
                         .IsConcurrencyToken()
@@ -174,11 +177,13 @@ namespace Andes.Mailer.Repository.Sql.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AuthorId");
+
                     b.HasIndex("DateDeactivated");
 
                     b.HasIndex("StatusId");
 
-                    b.HasIndex("SenderId", "StatusId");
+                    b.HasIndex("TeamId", "StatusId");
 
                     b.ToTable("Email", "Core");
                 });
@@ -363,6 +368,106 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Andes.Mailer.Entity.Teams.Team", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("DateCreated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateDeactivated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateModified")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ServiceAccountEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("ServiceAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DateDeactivated");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasFilter("[DateDeactivated] IS NULL");
+
+                    b.HasIndex("ServiceAccountEmail")
+                        .IsUnique()
+                        .HasFilter("[DateDeactivated] IS NULL");
+
+                    b.ToTable("Team", "Core");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Teams.TeamMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("DateCreated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateDeactivated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateModified")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("RoleId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DateDeactivated");
+
+                    b.HasIndex("RoleId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("TeamId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("TeamMember", "Core", t =>
+                        {
+                            t.HasCheckConstraint("CK_TeamMember_RoleId", "[RoleId] IN (2, 3)");
+                        });
+                });
+
             modelBuilder.Entity("Andes.Mailer.Entity.Users.PermissionType", b =>
                 {
                     b.Property<int>("Id")
@@ -426,6 +531,36 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                             Id = 7,
                             Description = "Uploads documents to, and removes them from, an email",
                             Name = "CanAttachDocuments"
+                        },
+                        new
+                        {
+                            Id = 8,
+                            Description = "Creates a team",
+                            Name = "CreateTeam"
+                        },
+                        new
+                        {
+                            Id = 9,
+                            Description = "Changes a team's details",
+                            Name = "ModifyTeam"
+                        },
+                        new
+                        {
+                            Id = 10,
+                            Description = "Deactivates a team",
+                            Name = "DeactivateTeam"
+                        },
+                        new
+                        {
+                            Id = 11,
+                            Description = "Reads a team and its members",
+                            Name = "ViewTeam"
+                        },
+                        new
+                        {
+                            Id = 12,
+                            Description = "Reads, creates, changes, and deletes a team's emails",
+                            Name = "ComposeTeamEmails"
                         });
                 });
 
@@ -454,14 +589,20 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         new
                         {
                             Id = 1,
-                            Description = "Manages every user",
+                            Description = "Manages every user and team, and can work in any team",
                             Name = "Administrator"
                         },
                         new
                         {
                             Id = 2,
-                            Description = "Manages the users of a team",
+                            Description = "Manages the members of a team and composes its emails",
                             Name = "TeamAdministrator"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Description = "Composes the emails of a team",
+                            Name = "TeamMember"
                         });
                 });
 
@@ -517,6 +658,46 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         },
                         new
                         {
+                            RoleId = 1,
+                            PermissionId = 8
+                        },
+                        new
+                        {
+                            RoleId = 1,
+                            PermissionId = 9
+                        },
+                        new
+                        {
+                            RoleId = 1,
+                            PermissionId = 10
+                        },
+                        new
+                        {
+                            RoleId = 1,
+                            PermissionId = 11
+                        },
+                        new
+                        {
+                            RoleId = 1,
+                            PermissionId = 12
+                        },
+                        new
+                        {
+                            RoleId = 2,
+                            PermissionId = 7
+                        },
+                        new
+                        {
+                            RoleId = 2,
+                            PermissionId = 11
+                        },
+                        new
+                        {
+                            RoleId = 2,
+                            PermissionId = 12
+                        },
+                        new
+                        {
                             RoleId = 2,
                             PermissionId = 4
                         },
@@ -532,8 +713,18 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         },
                         new
                         {
-                            RoleId = 2,
+                            RoleId = 3,
                             PermissionId = 7
+                        },
+                        new
+                        {
+                            RoleId = 3,
+                            PermissionId = 11
+                        },
+                        new
+                        {
+                            RoleId = 3,
+                            PermissionId = 12
                         });
                 });
 
@@ -595,14 +786,17 @@ namespace Andes.Mailer.Repository.Sql.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("UserRole", "Core");
+                    b.ToTable("UserRole", "Core", t =>
+                        {
+                            t.HasCheckConstraint("CK_UserRole_RoleId", "[RoleId] IN (1)");
+                        });
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Emails.Email", b =>
                 {
-                    b.HasOne("Andes.Mailer.Entity.Users.User", "Sender")
+                    b.HasOne("Andes.Mailer.Entity.Users.User", "Author")
                         .WithMany()
-                        .HasForeignKey("SenderId")
+                        .HasForeignKey("AuthorId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -612,9 +806,17 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Sender");
+                    b.HasOne("Andes.Mailer.Entity.Teams.Team", "Team")
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Author");
 
                     b.Navigation("Status");
+
+                    b.Navigation("Team");
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Emails.EmailAttachment", b =>
@@ -663,6 +865,33 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.Navigation("RecipientType");
                 });
 
+            modelBuilder.Entity("Andes.Mailer.Entity.Teams.TeamMember", b =>
+                {
+                    b.HasOne("Andes.Mailer.Entity.Users.Role", "Role")
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Teams.Team", "Team")
+                        .WithMany("Members")
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Users.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Role");
+
+                    b.Navigation("Team");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Andes.Mailer.Entity.Users.RoleGrant", b =>
                 {
                     b.HasOne("Andes.Mailer.Entity.Users.PermissionType", "PermissionType")
@@ -706,6 +935,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.Navigation("Attachments");
 
                     b.Navigation("Recipients");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Teams.Team", b =>
+                {
+                    b.Navigation("Members");
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Users.User", b =>

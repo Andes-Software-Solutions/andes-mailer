@@ -100,7 +100,9 @@ public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture, Azur
     [Fact]
     public async Task CreateUser_CallerWithoutPermission_ReturnsForbiddenProblem()
     {
-        var caller = await SeedUserAsync(Roles.TeamAdministrator);
+        // A team administrator manages one team's members, never the application's users.
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
         await using var factory = CreateFactory();
         using var client = CreateClient(factory, caller);
 

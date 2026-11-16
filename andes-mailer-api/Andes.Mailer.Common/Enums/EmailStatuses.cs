@@ -8,7 +8,7 @@ namespace Andes.Mailer.Common.Enums;
 public enum EmailStatuses
 {
     /// <summary>
-    /// Being composed; the sender can still change it.
+    /// Being composed; the team can still change it.
     /// </summary>
     [Description("Being composed")]
     Draft = 1,

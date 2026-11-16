@@ -23,15 +23,23 @@ public sealed class EmailConfiguration : BaseModifiedEntityConfiguration<Email, 
 
         // nvarchar(max): the validator caps the length, and a sized column would top out at 4,000 characters.
         builder.Property(e => e.BodyHtml).IsRequired();
-        builder.HasOne(e => e.Sender)
+        builder.HasOne(e => e.Team)
             .WithMany()
-            .HasForeignKey(e => e.SenderId)
+            .HasForeignKey(e => e.TeamId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(e => e.Author)
+            .WithMany()
+            .HasForeignKey(e => e.AuthorId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(e => e.Status)
             .WithMany()
             .HasForeignKey(e => e.StatusId)
             .OnDelete(DeleteBehavior.Restrict);
-        builder.HasIndex(e => new { e.SenderId, e.StatusId });
+        builder.HasIndex(e => new { e.TeamId, e.StatusId });
+        builder.HasIndex(e => e.AuthorId);
+
+        // Beside the row's own deactivation filter, so a deactivated team's emails stay hidden with it.
+        builder.HasQueryFilter("TeamDeactivation", e => e.Team!.DateDeactivated == null);
 
         builder.HasMany(e => e.Recipients)
             .WithOne(r => r.Email)

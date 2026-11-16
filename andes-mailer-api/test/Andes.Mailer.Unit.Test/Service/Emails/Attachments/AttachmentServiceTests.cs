@@ -51,10 +51,10 @@ public sealed class AttachmentServiceTests : IDisposable
     [Fact]
     public async Task StageAsync_Pdf_StagesFileRecordsPendingRowAndQueuesIt()
     {
-        var (senderId, emailId) = await AddDraftAsync();
+        var (teamId, emailId) = await AddDraftAsync();
         await using var ctx = _fixture.CreateContext();
 
-        var attachment = await StageAsync(ctx, emailId, senderId, @"C:\Users\ada\Documents\report.pdf", TestFiles.Pdf);
+        var attachment = await StageAsync(ctx, teamId, emailId, @"C:\Users\ada\Documents\report.pdf", TestFiles.Pdf);
 
         Assert.Equal("report.pdf", attachment.FileName);
         Assert.Equal(DocumentTypes.Pdf, attachment.DocumentType);
@@ -73,10 +73,10 @@ public sealed class AttachmentServiceTests : IDisposable
     [InlineData("report.pdf ")]
     public async Task StageAsync_ExecutableContent_ThrowsValidationAndStagesNothing(string fileName)
     {
-        var (senderId, emailId) = await AddDraftAsync();
+        var (teamId, emailId) = await AddDraftAsync();
         await using var ctx = _fixture.CreateContext();
 
-        await Assert.ThrowsAsync<ValidationException>(() => StageAsync(ctx, emailId, senderId, fileName, TestFiles.Executable));
+        await Assert.ThrowsAsync<ValidationException>(() => StageAsync(ctx, teamId, emailId, fileName, TestFiles.Executable));
 
         Assert.Empty(_staging.ListStagedBefore(DateTimeOffset.MaxValue));
         await using var readCtx = _fixture.CreateContext();
@@ -86,11 +86,11 @@ public sealed class AttachmentServiceTests : IDisposable
     [Fact]
     public async Task StageAsync_FileOverLimit_ThrowsValidation()
     {
-        var (senderId, emailId) = await AddDraftAsync();
+        var (teamId, emailId) = await AddDraftAsync();
         await using var ctx = _fixture.CreateContext();
         byte[] large = [.. TestFiles.Pdf, .. new byte[MaxFileBytes]];
 
-        var exception = await Assert.ThrowsAsync<ValidationException>(() => StageAsync(ctx, emailId, senderId, "big.pdf", large));
+        var exception = await Assert.ThrowsAsync<ValidationException>(() => StageAsync(ctx, teamId, emailId, "big.pdf", large));
 
         Assert.All(exception.Errors, e => Assert.Equal("file", e.PropertyName));
     }
@@ -98,19 +98,19 @@ public sealed class AttachmentServiceTests : IDisposable
     [Fact]
     public async Task StageAsync_EmailTotalOverLimit_ThrowsValidation()
     {
-        var (senderId, emailId) = await AddDraftAsync(Attachment(MaxEmailBytes - 10, AttachmentStatuses.Uploaded));
+        var (teamId, emailId) = await AddDraftAsync(Attachment(MaxEmailBytes - 10, AttachmentStatuses.Uploaded));
         await using var ctx = _fixture.CreateContext();
 
-        await Assert.ThrowsAsync<ValidationException>(() => StageAsync(ctx, emailId, senderId, "report.pdf", TestFiles.Pdf));
+        await Assert.ThrowsAsync<ValidationException>(() => StageAsync(ctx, teamId, emailId, "report.pdf", TestFiles.Pdf));
     }
 
     [Fact]
     public async Task StageAsync_FailedAttachmentsDoNotCountTowardTotal_Accepts()
     {
-        var (senderId, emailId) = await AddDraftAsync(Attachment(MaxEmailBytes, AttachmentStatuses.Failed));
+        var (teamId, emailId) = await AddDraftAsync(Attachment(MaxEmailBytes, AttachmentStatuses.Failed));
         await using var ctx = _fixture.CreateContext();
 
-        var attachment = await StageAsync(ctx, emailId, senderId, "report.pdf", TestFiles.Pdf);
+        var attachment = await StageAsync(ctx, teamId, emailId, "report.pdf", TestFiles.Pdf);
 
         Assert.Equal(AttachmentStatuses.Pending, attachment.Status);
     }
@@ -118,53 +118,55 @@ public sealed class AttachmentServiceTests : IDisposable
     [Fact]
     public async Task StageAsync_SentEmail_ThrowsNotEditable()
     {
-        var sender = await _fixture.AddUserAsync("ada@contoso.com");
-        var email = await _fixture.AddEmailAsync(sender.Id, EmailStatuses.Sent);
+        var team = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync("ada@contoso.com");
+        var email = await _fixture.AddEmailAsync(team.Id, author.Id, EmailStatuses.Sent);
         await using var ctx = _fixture.CreateContext();
 
-        await Assert.ThrowsAsync<EmailNotEditableException>(() => StageAsync(ctx, email.Id, sender.Id, "report.pdf", TestFiles.Pdf));
+        await Assert.ThrowsAsync<EmailNotEditableException>(() => StageAsync(ctx, team.Id, email.Id, "report.pdf", TestFiles.Pdf));
     }
 
     [Fact]
-    public async Task StageAsync_AnotherUsersEmail_ThrowsNotFound()
+    public async Task StageAsync_AnotherTeamsEmail_ThrowsNotFound()
     {
         var (_, emailId) = await AddDraftAsync();
+        var otherTeam = await _fixture.AddTeamAsync();
         await using var ctx = _fixture.CreateContext();
 
-        await Assert.ThrowsAsync<NotFoundException>(() => StageAsync(ctx, emailId, Guid.NewGuid(), "report.pdf", TestFiles.Pdf));
+        await Assert.ThrowsAsync<NotFoundException>(() => StageAsync(ctx, otherTeam.Id, emailId, "report.pdf", TestFiles.Pdf));
     }
 
     [Fact]
     public async Task OpenContentAsync_StillPending_ThrowsNotReady()
     {
         var attachment = Attachment(10, AttachmentStatuses.Pending);
-        var (senderId, emailId) = await AddDraftAsync(attachment);
+        var (teamId, emailId) = await AddDraftAsync(attachment);
         await using var ctx = _fixture.CreateContext();
 
         await Assert.ThrowsAsync<AttachmentNotReadyException>(() =>
-            CreateService(ctx).OpenContentAsync(emailId, attachment.Id, senderId, TestContext.Current.CancellationToken));
+            CreateService(ctx).OpenContentAsync(teamId, emailId, attachment.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task OpenContentAsync_BlobMissing_ThrowsNotFound()
     {
         var attachment = Attachment(10, AttachmentStatuses.Uploaded);
-        var (senderId, emailId) = await AddDraftAsync(attachment);
+        var (teamId, emailId) = await AddDraftAsync(attachment);
         _store.OpenReadAsync(attachment.BlobName, Arg.Any<CancellationToken>()).ThrowsAsync(new BlobNotFoundException(attachment.BlobName));
         await using var ctx = _fixture.CreateContext();
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            CreateService(ctx).OpenContentAsync(emailId, attachment.Id, senderId, TestContext.Current.CancellationToken));
+            CreateService(ctx).OpenContentAsync(teamId, emailId, attachment.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task DeleteAsync_Uploaded_DeactivatesRowAndDeletesBlob()
     {
         var attachment = Attachment(10, AttachmentStatuses.Uploaded);
-        var (senderId, emailId) = await AddDraftAsync(attachment);
+        var (teamId, emailId) = await AddDraftAsync(attachment);
         await using var ctx = _fixture.CreateContext();
 
-        await CreateService(ctx).DeleteAsync(emailId, attachment.Id, senderId, TestContext.Current.CancellationToken);
+        await CreateService(ctx).DeleteAsync(teamId, emailId, attachment.Id, TestContext.Current.CancellationToken);
 
         // Before hiding the row, and again after, for an upload that finished in between.
         await _store.Received(2).DeleteIfExistsAsync(attachment.BlobName, Arg.Any<CancellationToken>());
@@ -177,11 +179,11 @@ public sealed class AttachmentServiceTests : IDisposable
     public async Task DeleteAsync_StorageFails_LeavesRowVisibleSoTheRemovalCanBeRetried()
     {
         var attachment = Attachment(10, AttachmentStatuses.Uploaded);
-        var (senderId, emailId) = await AddDraftAsync(attachment);
+        var (teamId, emailId) = await AddDraftAsync(attachment);
         _store.DeleteIfExistsAsync(attachment.BlobName, Arg.Any<CancellationToken>()).ThrowsAsync(new IOException("storage unreachable"));
         await using var ctx = _fixture.CreateContext();
 
-        await Assert.ThrowsAsync<IOException>(() => CreateService(ctx).DeleteAsync(emailId, attachment.Id, senderId, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<IOException>(() => CreateService(ctx).DeleteAsync(teamId, emailId, attachment.Id, TestContext.Current.CancellationToken));
 
         await using var readCtx = _fixture.CreateContext();
         Assert.True(await readCtx.EmailAttachments.AnyAsync(a => a.Id == attachment.Id, TestContext.Current.CancellationToken));
@@ -191,12 +193,12 @@ public sealed class AttachmentServiceTests : IDisposable
     public async Task DeleteAsync_CleanupAfterRemovalFails_StillSucceeds()
     {
         var attachment = Attachment(10, AttachmentStatuses.Uploaded);
-        var (senderId, emailId) = await AddDraftAsync(attachment);
+        var (teamId, emailId) = await AddDraftAsync(attachment);
         _store.DeleteIfExistsAsync(attachment.BlobName, Arg.Any<CancellationToken>())
             .Returns(_ => Task.CompletedTask, _ => throw new IOException("storage unreachable"));
         await using var ctx = _fixture.CreateContext();
 
-        await CreateService(ctx).DeleteAsync(emailId, attachment.Id, senderId, TestContext.Current.CancellationToken);
+        await CreateService(ctx).DeleteAsync(teamId, emailId, attachment.Id, TestContext.Current.CancellationToken);
 
         await using var readCtx = _fixture.CreateContext();
         Assert.False(await readCtx.EmailAttachments.AnyAsync(a => a.Id == attachment.Id, TestContext.Current.CancellationToken));
@@ -205,7 +207,7 @@ public sealed class AttachmentServiceTests : IDisposable
     [Fact]
     public async Task StageAsync_ParallelUploadsOverEmailCap_AcceptsOnlyThoseThatFit()
     {
-        var (senderId, emailId) = await AddDraftAsync();
+        var (teamId, emailId) = await AddDraftAsync();
         byte[] content = [.. TestFiles.Pdf, .. new byte[MaxFileBytes - TestFiles.Pdf.Length]];
 
         var results = await Task.WhenAll(Enumerable.Range(0, 4).Select(async i =>
@@ -213,7 +215,7 @@ public sealed class AttachmentServiceTests : IDisposable
             await using var ctx = _fixture.CreateContext();
             try
             {
-                await StageAsync(ctx, emailId, senderId, $"part{i}.pdf", content);
+                await StageAsync(ctx, teamId, emailId, $"part{i}.pdf", content);
                 return true;
             }
             catch (ValidationException)
@@ -230,13 +232,13 @@ public sealed class AttachmentServiceTests : IDisposable
     [Fact]
     public async Task StageAsync_CancelledMidCopy_LeavesNoStagedFile()
     {
-        var (senderId, emailId) = await AddDraftAsync();
+        var (teamId, emailId) = await AddDraftAsync();
         using var cancellation = new CancellationTokenSource();
         await using var ctx = _fixture.CreateContext();
         await using var content = new CancellingStream(TestFiles.Pdf, cancellation);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            CreateService(ctx).StageAsync(emailId, senderId, "report.pdf", TestFiles.Pdf.Length, content, cancellation.Token));
+            CreateService(ctx).StageAsync(teamId, emailId, "report.pdf", TestFiles.Pdf.Length, content, cancellation.Token));
 
         Assert.Empty(_staging.ListStagedBefore(DateTimeOffset.MaxValue));
     }
@@ -266,21 +268,22 @@ public sealed class AttachmentServiceTests : IDisposable
         };
     }
 
-    private async Task<(Guid SenderId, Guid EmailId)> AddDraftAsync(params EmailAttachment[] attachments)
+    private async Task<(Guid TeamId, Guid EmailId)> AddDraftAsync(params EmailAttachment[] attachments)
     {
-        var sender = await _fixture.AddUserAsync($"{Guid.NewGuid():N}@contoso.com");
-        var email = await _fixture.AddEmailAsync(sender.Id, EmailStatuses.Draft, attachments);
+        var team = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync($"{Guid.NewGuid():N}@contoso.com");
+        var email = await _fixture.AddEmailAsync(team.Id, author.Id, EmailStatuses.Draft, attachments);
 
-        return (sender.Id, email.Id);
+        return (team.Id, email.Id);
     }
 
     private AttachmentService CreateService(AndesMailerDbContext ctx) => new(ctx, _store, _staging, _channel, _quotaLock, _fixture.Time, _options, NullLogger<AttachmentService>.Instance);
 
-    private async Task<EmailAttachmentDto> StageAsync(AndesMailerDbContext ctx, Guid emailId, Guid callerId, string fileName, byte[] content)
+    private async Task<EmailAttachmentDto> StageAsync(AndesMailerDbContext ctx, Guid teamId, Guid emailId, string fileName, byte[] content)
     {
         using var stream = new MemoryStream(content);
 
-        return await CreateService(ctx).StageAsync(emailId, callerId, fileName, content.Length, stream, TestContext.Current.CancellationToken);
+        return await CreateService(ctx).StageAsync(teamId, emailId, fileName, content.Length, stream, TestContext.Current.CancellationToken);
     }
 
     private async Task<Guid> FirstQueuedAsync()

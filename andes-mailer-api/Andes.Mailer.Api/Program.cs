@@ -16,6 +16,7 @@ builder.Services.AddAndesMailerBlobPersistence(builder.Configuration);
 builder.Services.AddAndesMailerHealth();
 builder.Services.AddAndesMailerAuthentication(builder.Configuration);
 builder.Services.AddUsers();
+builder.Services.AddTeams();
 builder.Services.AddEmails(builder.Configuration);
 
 var app = builder.Build();
@@ -31,6 +32,8 @@ app.UseAuthorization();
 app.MapAndesMailerOpenApi();
 app.MapAndesMailerHealth();
 app.MapUserEndpoints();
+app.MapTeamEndpoints();
+app.MapTeamMemberEndpoints();
 app.MapEmailEndpoints();
 app.MapEmailAttachmentEndpoints();
 

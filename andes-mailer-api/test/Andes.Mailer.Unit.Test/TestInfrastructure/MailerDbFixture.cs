@@ -1,5 +1,6 @@
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Entity.Emails;
+using Andes.Mailer.Entity.Teams;
 using Andes.Mailer.Entity.Users;
 using Andes.Mailer.Repository.Sql.DbContexts;
 using Andes.Mailer.Repository.Sql.Interceptors;
@@ -64,10 +65,36 @@ public sealed class MailerDbFixture : IDisposable
         return user;
     }
 
-    public async Task<Email> AddEmailAsync(Guid senderId, EmailStatuses status = EmailStatuses.Draft, params EmailAttachment[] attachments)
+    public async Task<Team> AddTeamAsync(string? name = null, string? serviceAccountEmail = null)
     {
         await using var ctx = CreateContext();
-        var email = new Email { SenderId = senderId, Subject = "Report", BodyHtml = "<p>Hi</p>", StatusId = status };
+        var id = Guid.NewGuid();
+        var team = new Team
+        {
+            Name = name ?? $"Team {id:N}",
+            ServiceAccountEmail = serviceAccountEmail ?? $"mailbox-{id:N}@contoso.com",
+            ServiceAccountId = Guid.NewGuid(),
+        };
+        ctx.Add(team);
+        await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        return team;
+    }
+
+    public async Task<TeamMember> AddTeamMemberAsync(Guid teamId, Guid userId, Roles role = Roles.TeamMember)
+    {
+        await using var ctx = CreateContext();
+        var member = new TeamMember { TeamId = teamId, UserId = userId, RoleId = role };
+        ctx.Add(member);
+        await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        return member;
+    }
+
+    public async Task<Email> AddEmailAsync(Guid teamId, Guid authorId, EmailStatuses status = EmailStatuses.Draft, params EmailAttachment[] attachments)
+    {
+        await using var ctx = CreateContext();
+        var email = new Email { TeamId = teamId, AuthorId = authorId, Subject = "Report", BodyHtml = "<p>Hi</p>", StatusId = status };
         foreach (var attachment in attachments)
         {
             email.Attachments.Add(attachment);

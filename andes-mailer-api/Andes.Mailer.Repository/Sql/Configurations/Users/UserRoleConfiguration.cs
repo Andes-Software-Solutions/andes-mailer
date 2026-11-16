@@ -1,3 +1,4 @@
+using Andes.Mailer.Common.Constants.Users;
 using Andes.Mailer.Entity.Users;
 using Andes.Mailer.Repository.Sql.Constants;
 
@@ -16,7 +17,11 @@ public sealed class UserRoleConfiguration : IEntityTypeConfiguration<UserRole>
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.ToTable("UserRole", SqlSchemas.Core);
+        // Team roles are held through [Core].[TeamMember], where they name the team they apply to.
+        builder.ToTable(
+            "UserRole",
+            SqlSchemas.Core,
+            t => t.HasCheckConstraint("CK_UserRole_RoleId", RoleConstraint.Of(RoleScopes.GlobalRoles)));
         builder.HasKey(ur => new { ur.UserId, ur.RoleId });
         builder.HasOne(ur => ur.Role)
             .WithMany()

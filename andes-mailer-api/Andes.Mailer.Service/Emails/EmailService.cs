@@ -16,83 +16,83 @@ using Microsoft.EntityFrameworkCore;
 namespace Andes.Mailer.Service.Emails;
 
 /// <summary>
-/// Manages the emails users compose. Every operation is scoped to the caller's own emails.
+/// Manages the emails teams compose. Every operation is scoped to one team, which the caller has already been checked against.
 /// </summary>
 public interface IEmailService
 {
     /// <summary>
-    /// Lists one page of the caller's emails, most recently changed first.
+    /// Lists one page of a team's emails, most recently changed first.
     /// </summary>
-    /// <param name="callerId">The Entra object id of the signed-in user.</param>
+    /// <param name="teamId">The team's id.</param>
     /// <param name="action">The page to return.</param>
     /// <param name="cancellationToken">A token that cancels the query.</param>
     /// <returns>The page.</returns>
-    Task<PaginatedResponseDto<EmailSummaryDto>> ListAsync(Guid callerId, ListEmailsActionDto action, CancellationToken cancellationToken);
+    Task<PaginatedResponseDto<EmailSummaryDto>> ListAsync(Guid teamId, ListEmailsActionDto action, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Gets one of the caller's emails with its recipients and attachments.
+    /// Gets one of a team's emails with its recipients and attachments.
     /// </summary>
+    /// <param name="teamId">The team's id.</param>
     /// <param name="id">The email's id.</param>
-    /// <param name="callerId">The Entra object id of the signed-in user.</param>
     /// <param name="cancellationToken">A token that cancels the query.</param>
     /// <returns>The email.</returns>
-    /// <exception cref="NotFoundException">The caller has no active email with the id.</exception>
-    Task<EmailDto> GetAsync(Guid id, Guid callerId, CancellationToken cancellationToken);
+    /// <exception cref="NotFoundException">The team has no active email with the id.</exception>
+    Task<EmailDto> GetAsync(Guid teamId, Guid id, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Starts a draft email for the caller.
+    /// Starts a draft email for a team.
     /// </summary>
-    /// <param name="callerId">The Entra object id of the signed-in user.</param>
+    /// <param name="teamId">The team's id.</param>
+    /// <param name="authorId">The Entra object id of the signed-in user, who must be an active user.</param>
     /// <param name="action">The subject, body, and recipients.</param>
     /// <param name="cancellationToken">A token that cancels the operation.</param>
     /// <returns>The new draft.</returns>
-    /// <exception cref="ForbiddenException">The caller is not an active user of the application.</exception>
-    Task<EmailDto> CreateAsync(Guid callerId, CreateEmailActionDto action, CancellationToken cancellationToken);
+    Task<EmailDto> CreateAsync(Guid teamId, Guid authorId, CreateEmailActionDto action, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Replaces the subject, body, and recipients of one of the caller's drafts.
+    /// Replaces the subject, body, and recipients of one of a team's drafts.
     /// </summary>
+    /// <param name="teamId">The team's id.</param>
     /// <param name="id">The email's id.</param>
-    /// <param name="callerId">The Entra object id of the signed-in user.</param>
     /// <param name="action">The new content and the row version the caller last read.</param>
     /// <param name="cancellationToken">A token that cancels the operation.</param>
     /// <returns>The updated draft.</returns>
-    /// <exception cref="NotFoundException">The caller has no active email with the id.</exception>
+    /// <exception cref="NotFoundException">The team has no active email with the id.</exception>
     /// <exception cref="EmailNotEditableException">The email is no longer a draft.</exception>
     /// <exception cref="ConflictException">The email changed since the caller read it.</exception>
-    Task<EmailDto> UpdateAsync(Guid id, Guid callerId, UpdateEmailActionDto action, CancellationToken cancellationToken);
+    Task<EmailDto> UpdateAsync(Guid teamId, Guid id, UpdateEmailActionDto action, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Deactivates one of the caller's emails. Its attachments stay in storage.
+    /// Deactivates one of a team's emails. Its attachments stay in storage.
     /// </summary>
+    /// <param name="teamId">The team's id.</param>
     /// <param name="id">The email's id.</param>
-    /// <param name="callerId">The Entra object id of the signed-in user.</param>
     /// <param name="cancellationToken">A token that cancels the operation.</param>
     /// <returns>A task that completes when the email is deactivated.</returns>
-    /// <exception cref="NotFoundException">The caller has no active email with the id.</exception>
+    /// <exception cref="NotFoundException">The team has no active email with the id.</exception>
     /// <exception cref="ConflictException">The email changed during the operation.</exception>
-    Task DeleteAsync(Guid id, Guid callerId, CancellationToken cancellationToken);
+    Task DeleteAsync(Guid teamId, Guid id, CancellationToken cancellationToken);
 }
 
 /// <summary>
-/// Manages the emails users compose in the SQL store, resolving recipients against the directory.
+/// Manages the emails teams compose in the SQL store, resolving recipients against the directory.
 /// </summary>
 /// <param name="ctx">The store.</param>
 /// <param name="directory">The directory recipients are resolved against.</param>
 public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService directory) : IEmailService
 {
-    // One message for "missing" and "someone else's", so the API never confirms that another user's email exists.
+    // One message for "missing" and "another team's", so the API never confirms that another team's email exists.
     private const string NotFoundMessage = "The email was not found.";
 
     private readonly AndesMailerDbContext _ctx = ctx;
     private readonly IDirectoryUserService _directory = directory;
 
     /// <inheritdoc/>
-    public async Task<PaginatedResponseDto<EmailSummaryDto>> ListAsync(Guid callerId, ListEmailsActionDto action, CancellationToken cancellationToken)
+    public async Task<PaginatedResponseDto<EmailSummaryDto>> ListAsync(Guid teamId, ListEmailsActionDto action, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(action);
 
-        var emails = _ctx.Emails.AsNoTracking().Where(e => e.SenderId == callerId);
+        var emails = _ctx.Emails.AsNoTracking().Where(e => e.TeamId == teamId);
         var total = await emails.CountAsync(cancellationToken);
         var items = await emails
             .OrderByDescending(e => e.DateModified ?? e.DateCreated)
@@ -106,11 +106,11 @@ public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService
     }
 
     /// <inheritdoc/>
-    public async Task<EmailDto> GetAsync(Guid id, Guid callerId, CancellationToken cancellationToken)
+    public async Task<EmailDto> GetAsync(Guid teamId, Guid id, CancellationToken cancellationToken)
     {
         var email = await _ctx.Emails
             .AsNoTracking()
-            .Where(e => e.Id == id && e.SenderId == callerId)
+            .Where(e => e.Id == id && e.TeamId == teamId)
             .Select(EmailMapper.MapToEmailDtoExpression)
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -118,19 +118,14 @@ public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService
     }
 
     /// <inheritdoc/>
-    public async Task<EmailDto> CreateAsync(Guid callerId, CreateEmailActionDto action, CancellationToken cancellationToken)
+    public async Task<EmailDto> CreateAsync(Guid teamId, Guid authorId, CreateEmailActionDto action, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(action);
 
-        // The sender is a foreign key to [Core].[User], so only someone added to the application can compose.
-        if (!await _ctx.Users.AnyAsync(u => u.Id == callerId, cancellationToken))
-        {
-            throw new ForbiddenException("Only a user of the application can compose emails.");
-        }
-
         var email = new Email
         {
-            SenderId = callerId,
+            TeamId = teamId,
+            AuthorId = authorId,
             Subject = action.Subject.Trim(),
             BodyHtml = EmailBodySanitizer.Sanitize(action.BodyHtml),
             StatusId = EmailStatuses.Draft,
@@ -143,7 +138,7 @@ public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService
     }
 
     /// <inheritdoc/>
-    public async Task<EmailDto> UpdateAsync(Guid id, Guid callerId, UpdateEmailActionDto action, CancellationToken cancellationToken)
+    public async Task<EmailDto> UpdateAsync(Guid teamId, Guid id, UpdateEmailActionDto action, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(action);
 
@@ -151,7 +146,7 @@ public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService
             .Include(e => e.Recipients)
             .Include(e => e.Attachments)
             .AsSplitQuery()
-            .FirstOrDefaultAsync(e => e.Id == id && e.SenderId == callerId, cancellationToken)
+            .FirstOrDefaultAsync(e => e.Id == id && e.TeamId == teamId, cancellationToken)
             ?? throw new NotFoundException(NotFoundMessage);
         if (email.StatusId != EmailStatuses.Draft)
         {
@@ -172,9 +167,9 @@ public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService
     }
 
     /// <inheritdoc/>
-    public async Task DeleteAsync(Guid id, Guid callerId, CancellationToken cancellationToken)
+    public async Task DeleteAsync(Guid teamId, Guid id, CancellationToken cancellationToken)
     {
-        var email = await _ctx.Emails.FirstOrDefaultAsync(e => e.Id == id && e.SenderId == callerId, cancellationToken)
+        var email = await _ctx.Emails.FirstOrDefaultAsync(e => e.Id == id && e.TeamId == teamId, cancellationToken)
             ?? throw new NotFoundException(NotFoundMessage);
 
         // DeactivationInterceptor turns the delete into a DateDeactivated stamp; the recipient and attachment filters hide the children with it.

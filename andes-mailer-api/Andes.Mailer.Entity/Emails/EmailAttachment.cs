@@ -19,7 +19,7 @@ public sealed class EmailAttachment : BaseModifiedEntity<Guid>
     public Email? Email { get; set; }
 
     /// <summary>
-    /// Gets or sets the file name the sender uploaded, without any directory.
+    /// Gets or sets the file name the uploader sent, without any directory.
     /// </summary>
     public required string FileName { get; set; }
 
@@ -62,6 +62,6 @@ public sealed class EmailAttachment : BaseModifiedEntity<Guid>
     /// <summary>
     /// Gets or sets why the upload failed.
     /// </summary>
-    /// <value>A message safe to show the sender, or <see langword="null"/> unless <see cref="StatusId"/> is <see cref="AttachmentStatuses.Failed"/>.</value>
+    /// <value>A message safe to show the team, or <see langword="null"/> unless <see cref="StatusId"/> is <see cref="AttachmentStatuses.Failed"/>.</value>
     public string? FailureReason { get; set; }
 }

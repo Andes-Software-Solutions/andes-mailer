@@ -48,4 +48,34 @@ public enum Permissions
     /// </summary>
     [Description("Uploads documents to, and removes them from, an email")]
     CanAttachDocuments = 7,
+
+    /// <summary>
+    /// Creates a team.
+    /// </summary>
+    [Description("Creates a team")]
+    CreateTeam = 8,
+
+    /// <summary>
+    /// Changes a team's details.
+    /// </summary>
+    [Description("Changes a team's details")]
+    ModifyTeam = 9,
+
+    /// <summary>
+    /// Deactivates a team.
+    /// </summary>
+    [Description("Deactivates a team")]
+    DeactivateTeam = 10,
+
+    /// <summary>
+    /// Reads a team and its members.
+    /// </summary>
+    [Description("Reads a team and its members")]
+    ViewTeam = 11,
+
+    /// <summary>
+    /// Reads, creates, changes, and deletes a team's emails.
+    /// </summary>
+    [Description("Reads, creates, changes, and deletes a team's emails")]
+    ComposeTeamEmails = 12,
 }
