@@ -100,16 +100,15 @@ public sealed class TemplateAttachmentServiceTests : IDisposable
     {
         var stored = NewAttachment(AttachmentStatuses.Uploaded);
         var (teamId, templateId) = await AddTemplateAsync(stored);
-        _store.OpenReadAsync(stored.BlobName, Arg.Any<CancellationToken>()).Returns(new MemoryStream(TestFiles.Pdf));
+        await using var document = new MemoryStream(TestFiles.Pdf);
+        _store.OpenReadAsync(stored.BlobName, Arg.Any<CancellationToken>()).Returns(document);
         await using var ctx = _fixture.CreateContext();
 
         var content = await CreateService(ctx).OpenContentAsync(teamId, templateId, stored.Id, TestContext.Current.CancellationToken);
 
-        await using (content.Content)
-        {
-            Assert.Equal(stored.FileName, content.FileName);
-            Assert.Equal("application/pdf", content.ContentType);
-        }
+        Assert.Same(document, content.Content);
+        Assert.Equal(stored.FileName, content.FileName);
+        Assert.Equal("application/pdf", content.ContentType);
     }
 
     [Fact]
