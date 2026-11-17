@@ -1,4 +1,5 @@
 using Andes.Mailer.Entity.Emails;
+using Andes.Mailer.Entity.Emails.Templates;
 using Andes.Mailer.Entity.Teams;
 using Andes.Mailer.Entity.Users;
 
@@ -51,6 +52,21 @@ public sealed class AndesMailerDbContext(DbContextOptions<AndesMailerDbContext> 
     /// Gets the attachments of emails.
     /// </summary>
     public DbSet<EmailAttachment> EmailAttachments => Set<EmailAttachment>();
+
+    /// <summary>
+    /// Gets the email templates.
+    /// </summary>
+    public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
+
+    /// <summary>
+    /// Gets the recipients of email templates.
+    /// </summary>
+    public DbSet<EmailTemplateRecipient> EmailTemplateRecipients => Set<EmailTemplateRecipient>();
+
+    /// <summary>
+    /// Gets the attachments of email templates.
+    /// </summary>
+    public DbSet<EmailTemplateAttachment> EmailTemplateAttachments => Set<EmailTemplateAttachment>();
 
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>

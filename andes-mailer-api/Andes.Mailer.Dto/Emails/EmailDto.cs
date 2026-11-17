@@ -7,6 +7,7 @@ namespace Andes.Mailer.Dto.Emails;
 /// </summary>
 /// <param name="Id">The email's id.</param>
 /// <param name="AuthorId">The Entra object id of the team member who started the email.</param>
+/// <param name="TemplateId">The id of the template the email was made from, or <see langword="null"/> for an email started from scratch.</param>
 /// <param name="Subject">The subject.</param>
 /// <param name="BodyHtml">The body as sanitized HTML, safe to load into the editor.</param>
 /// <param name="Status">One of the enumeration values that specifies the stage of the email's life.</param>
@@ -18,6 +19,7 @@ namespace Andes.Mailer.Dto.Emails;
 public sealed record EmailDto(
     Guid Id,
     Guid AuthorId,
+    Guid? TemplateId,
     string Subject,
     string BodyHtml,
     EmailStatuses Status,

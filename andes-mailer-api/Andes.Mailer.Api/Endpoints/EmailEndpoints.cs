@@ -29,6 +29,13 @@ internal static class EmailEndpoints
         return TypedResults.Created($"/api/teams/{teamId}/emails/{email.Id}", email);
     }
 
+    private static async Task<Created<EmailDto>> CreateEmailFromTemplate(Guid teamId, CreateEmailFromTemplateActionDto action, ClaimsPrincipal caller, IEmailService emails, CancellationToken cancellationToken)
+    {
+        var email = await emails.CreateFromTemplateAsync(teamId, caller.GetCallerId(), action, cancellationToken);
+
+        return TypedResults.Created($"/api/teams/{teamId}/emails/{email.Id}", email);
+    }
+
     private static async Task<Ok<EmailDto>> UpdateEmail(Guid teamId, Guid id, UpdateEmailActionDto action, IEmailService emails, CancellationToken cancellationToken) =>
         TypedResults.Ok(await emails.UpdateAsync(teamId, id, action, cancellationToken));
 
@@ -72,6 +79,17 @@ internal static class EmailEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
+
+        // Only the team check of the group: starting from a template is open to every member, like starting from scratch.
+        group.MapPost("/from-template", CreateEmailFromTemplate)
+            .AddEndpointFilter<ValidationEndpointFilter<CreateEmailFromTemplateActionDto>>()
+            .WithName(nameof(CreateEmailFromTemplate))
+            .WithSummary("Starts a draft email for a team from one of its templates.")
+            .WithDescription("Copies the template's subject, body, recipients, and stored attachments. The draft is independent of the template from then on.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapPut("/{id:guid}", UpdateEmail)
             .AddEndpointFilter<ValidationEndpointFilter<UpdateEmailActionDto>>()

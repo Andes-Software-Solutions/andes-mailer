@@ -2,6 +2,8 @@ using Andes.Mailer.Api.Startup;
 using Andes.Mailer.Common.Validation;
 using Andes.Mailer.Service.Emails;
 using Andes.Mailer.Service.Emails.Attachments;
+using Andes.Mailer.Service.Emails.Templates;
+using Andes.Mailer.Service.Emails.Templates.Attachments;
 using Andes.Mailer.Service.Options;
 
 using FluentValidation;
@@ -22,6 +24,9 @@ internal static class EmailsConfiguration
 
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IAttachmentService, AttachmentService>();
+        services.AddScoped<IEmailTemplateService, EmailTemplateService>();
+        services.AddScoped<ITemplateAttachmentService, TemplateAttachmentService>();
+        services.AddSingleton<AttachmentLifecycle>();
         services.AddSingleton<AttachmentStagingArea>();
         services.AddSingleton<AttachmentUploadChannel>();
         services.AddSingleton<AttachmentQuotaLock>();

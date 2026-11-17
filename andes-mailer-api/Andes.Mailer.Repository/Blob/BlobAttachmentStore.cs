@@ -40,6 +40,16 @@ public interface IAttachmentStore
     /// <param name="cancellationToken">A token that cancels the request.</param>
     /// <returns>A task that completes when the document is gone.</returns>
     Task DeleteIfExistsAsync(string blobName, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Copies a stored document to a new name, replacing any document already stored under that name.
+    /// </summary>
+    /// <param name="sourceBlobName">The name the document is stored under.</param>
+    /// <param name="destinationBlobName">The name to store the copy under.</param>
+    /// <param name="cancellationToken">A token that cancels the copy.</param>
+    /// <returns>A task that completes when the copy is stored.</returns>
+    /// <exception cref="BlobNotFoundException">No document is stored under <paramref name="sourceBlobName"/>.</exception>
+    Task CopyAsync(string sourceBlobName, string destinationBlobName, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -85,5 +95,36 @@ internal sealed class BlobAttachmentStore(BlobServiceClient client, IOptions<Blo
         ArgumentException.ThrowIfNullOrWhiteSpace(blobName);
 
         await _container.GetBlobClient(blobName).DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task CopyAsync(string sourceBlobName, string destinationBlobName, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceBlobName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationBlobName);
+
+        // Copy Blob inside one account is authorized by the client's own credential, needs no SAS, and the service runs it
+        // server-side, so the document never passes through the API. It usually completes at once; the wait covers the rest.
+        // https://learn.microsoft.com/azure/storage/blobs/storage-blob-copy-async-dotnet
+        var source = _container.GetBlobClient(sourceBlobName);
+        var destination = _container.GetBlobClient(destinationBlobName);
+        try
+        {
+            var copy = await destination.StartCopyFromUriAsync(source.Uri, cancellationToken: cancellationToken);
+            await copy.WaitForCompletionAsync(cancellationToken);
+        }
+
+        // 404 only: CannotVerifyCopySource also answers 403 when the source cannot be authorized, which is a fault, not a missing document.
+        catch (RequestFailedException ex) when (ex.Status == 404 && (ex.ErrorCode == BlobErrorCode.CannotVerifyCopySource || ex.ErrorCode == BlobErrorCode.BlobNotFound))
+        {
+            throw new BlobNotFoundException(sourceBlobName);
+        }
+
+        // The operation completes on any terminal state, so a failed or aborted copy is caught here rather than trusted.
+        var properties = await destination.GetPropertiesAsync(cancellationToken: cancellationToken);
+        if (properties.Value.CopyStatus != CopyStatus.Success)
+        {
+            throw new InvalidOperationException($"Copying blob '{sourceBlobName}' to '{destinationBlobName}' ended {properties.Value.CopyStatus}: {properties.Value.CopyStatusDescription}");
+        }
     }
 }

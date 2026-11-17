@@ -1,5 +1,6 @@
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Entity.Emails;
+using Andes.Mailer.Entity.Emails.Templates;
 using Andes.Mailer.Entity.Teams;
 using Andes.Mailer.Entity.Users;
 using Andes.Mailer.Repository.Sql.DbContexts;
@@ -7,6 +8,7 @@ using Andes.Mailer.Repository.Sql.Interceptors;
 
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Time.Testing;
 
@@ -49,6 +51,10 @@ public sealed class MailerDbFixture : IDisposable
     public FakeTimeProvider Time { get; } = new();
 
     public AndesMailerDbContext CreateContext() => new(_options);
+
+    // For tests that need to act at a precise point of a save, such as a race or a failure after the commit.
+    public AndesMailerDbContext CreateContext(params IInterceptor[] interceptors) =>
+        new(new DbContextOptionsBuilder<AndesMailerDbContext>(_options).AddInterceptors(interceptors).Options);
 
     public async Task<User> AddUserAsync(string email, string firstName = "Ada", string lastName = "Lovelace", Roles? role = null)
     {
@@ -104,6 +110,28 @@ public sealed class MailerDbFixture : IDisposable
         await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         return email;
+    }
+
+    public async Task<EmailTemplate> AddTemplateAsync(Guid teamId, Guid authorId, string? name = null, params EmailTemplateAttachment[] attachments)
+    {
+        await using var ctx = CreateContext();
+        var template = new EmailTemplate
+        {
+            TeamId = teamId,
+            AuthorId = authorId,
+            Name = name ?? $"Template {Guid.NewGuid():N}",
+            Subject = "Monthly report",
+            BodyHtml = "<p>Hello</p>",
+        };
+        foreach (var attachment in attachments)
+        {
+            template.Attachments.Add(attachment);
+        }
+
+        ctx.Add(template);
+        await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        return template;
     }
 
     public async Task DeactivateUserAsync(Guid id)

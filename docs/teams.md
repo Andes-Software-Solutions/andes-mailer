@@ -23,7 +23,7 @@ These are not built, and the API makes no provision for them:
 | Role | Id | Scope | Held through | Can |
 | --- | --- | --- | --- | --- |
 | `Administrator` | 1 | The whole application | `[Core].[UserRole]` | Everything, in every team, including its emails |
-| `TeamAdministrator` | 2 | One team | `[Core].[TeamMember]` | Add, re-role, and remove members; compose emails; attach documents |
+| `TeamAdministrator` | 2 | One team | `[Core].[TeamMember]` | Add, re-role, and remove members; create, edit, and deactivate [email templates](email-templates.md); compose emails; attach documents |
 | `TeamMember` | 3 | One team | `[Core].[TeamMember]` | View the team and its members; compose emails; attach documents |
 
 The scopes are listed in `RoleScopes` (`Andes.Mailer.Common/Constants/Users/`). Check constraints enforce them in the database: `[Core].[UserRole]` accepts only `RoleId` 1, and `[Core].[TeamMember]` accepts only 2 and 3. The API also rejects a global role in a membership request with a 400.
