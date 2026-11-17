@@ -277,7 +277,8 @@ public sealed class AttachmentServiceTests : IDisposable
         return (team.Id, email.Id);
     }
 
-    private AttachmentService CreateService(AndesMailerDbContext ctx) => new(ctx, _store, _staging, _channel, _quotaLock, _fixture.Time, _options, NullLogger<AttachmentService>.Instance);
+    private AttachmentService CreateService(AndesMailerDbContext ctx) =>
+        new(ctx, new AttachmentLifecycle(_store, _staging, _channel, _quotaLock, _fixture.Time, _options, NullLogger<AttachmentLifecycle>.Instance));
 
     private async Task<EmailAttachmentDto> StageAsync(AndesMailerDbContext ctx, Guid teamId, Guid emailId, string fileName, byte[] content)
     {
@@ -288,9 +289,11 @@ public sealed class AttachmentServiceTests : IDisposable
 
     private async Task<Guid> FirstQueuedAsync()
     {
-        await foreach (var id in _channel.ReadAllAsync(TestContext.Current.CancellationToken))
+        await foreach (var job in _channel.ReadAllAsync(TestContext.Current.CancellationToken))
         {
-            return id;
+            Assert.Equal(AttachmentOwners.Email, job.Owner);
+
+            return job.Id;
         }
 
         throw new InvalidOperationException("Nothing was queued.");

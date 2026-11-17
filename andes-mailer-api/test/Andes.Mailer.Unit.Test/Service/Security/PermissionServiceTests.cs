@@ -21,6 +21,7 @@ public sealed class PermissionServiceTests : IDisposable
         { Roles.TeamAdministrator, Permissions.CreateTeamUser, TeamAccess.Granted },
         { Roles.TeamAdministrator, Permissions.ModifyTeamUser, TeamAccess.Granted },
         { Roles.TeamAdministrator, Permissions.DeactivateTeamUser, TeamAccess.Granted },
+        { Roles.TeamAdministrator, Permissions.ManageTeamTemplates, TeamAccess.Granted },
         { Roles.TeamAdministrator, Permissions.CreateTeam, TeamAccess.Forbidden },
         { Roles.TeamAdministrator, Permissions.CreateUser, TeamAccess.Forbidden },
         { Roles.TeamMember, Permissions.ViewTeam, TeamAccess.Granted },
@@ -29,6 +30,7 @@ public sealed class PermissionServiceTests : IDisposable
         { Roles.TeamMember, Permissions.CreateTeamUser, TeamAccess.Forbidden },
         { Roles.TeamMember, Permissions.ModifyTeamUser, TeamAccess.Forbidden },
         { Roles.TeamMember, Permissions.DeactivateTeamUser, TeamAccess.Forbidden },
+        { Roles.TeamMember, Permissions.ManageTeamTemplates, TeamAccess.Forbidden },
     };
 
     [Theory]

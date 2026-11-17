@@ -3,7 +3,7 @@ using Andes.Mailer.Common.Enums;
 namespace Andes.Mailer.Dto.Emails;
 
 /// <summary>
-/// Describes a document attached to an email and the progress of its upload to storage.
+/// Describes a document attached to an email or a template, and the progress of its upload to storage.
 /// </summary>
 /// <param name="Id">The attachment's id.</param>
 /// <param name="FileName">The file name the uploader sent.</param>

@@ -1,8 +1,10 @@
 {
   "permissions": {
     "allow": [],
-    "additionalDirectories": [],
-    "deny": ["mcp__plugin_andes-angular_angular-cli__ai_tutor"]
+    "deny": [
+      "mcp__plugin_andes-angular_angular-cli__ai_tutor"
+    ],
+    "additionalDirectories": []
   },
   "model": "opus",
   "enableAllProjectMcpServers": true,

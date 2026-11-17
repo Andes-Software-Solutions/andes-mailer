@@ -1,8 +1,10 @@
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Entity.Emails;
+using Andes.Mailer.Entity.Emails.Templates;
 using Andes.Mailer.Repository.Blob;
 using Andes.Mailer.Repository.Sql.DbContexts;
 using Andes.Mailer.Service.Emails.Attachments;
+using Andes.Mailer.Service.Emails.Attachments.Models;
 using Andes.Mailer.Service.Options;
 using Andes.Mailer.Unit.Test.TestInfrastructure;
 
@@ -47,7 +49,7 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
         using var processor = CreateProcessor();
         await processor.StartAsync(TestContext.Current.CancellationToken);
 
-        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Email, attachment.Id), TestContext.Current.CancellationToken);
         var settled = await WaitForStatusAsync(attachment.Id, AttachmentStatuses.Uploaded);
         await processor.StopAsync(TestContext.Current.CancellationToken);
 
@@ -67,8 +69,8 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
         using var processor = CreateProcessor(maxUploadAttempts: 2);
         await processor.StartAsync(TestContext.Current.CancellationToken);
 
-        await _channel.EnqueueAsync(failing.Id, TestContext.Current.CancellationToken);
-        await _channel.EnqueueAsync(next.Id, TestContext.Current.CancellationToken);
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Email, failing.Id), TestContext.Current.CancellationToken);
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Email, next.Id), TestContext.Current.CancellationToken);
         var failed = await WaitForStatusAsync(failing.Id, AttachmentStatuses.Failed);
         var uploaded = await WaitForStatusAsync(next.Id, AttachmentStatuses.Uploaded);
         await processor.StopAsync(TestContext.Current.CancellationToken);
@@ -92,7 +94,7 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
         using var processor = CreateProcessor();
         await processor.StartAsync(TestContext.Current.CancellationToken);
 
-        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Email, attachment.Id), TestContext.Current.CancellationToken);
         await WaitUntilAsync(() => _store.ReceivedCalls().Any(c => c.GetMethodInfo().Name == nameof(IAttachmentStore.UploadAsync)));
         var stagedAfterFailure = _staging.Exists(attachment.Id);
         var uploaded = await WaitForStatusAsync(attachment.Id, AttachmentStatuses.Uploaded);
@@ -116,7 +118,7 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
         using var processor = new AttachmentUploadProcessor(flaky.GetRequiredService<IServiceScopeFactory>(), _channel, _staging, _store, _fixture.Time, options, NullLogger<AttachmentUploadProcessor>.Instance);
         await processor.StartAsync(TestContext.Current.CancellationToken);
 
-        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Email, attachment.Id), TestContext.Current.CancellationToken);
         var uploaded = await WaitForStatusAsync(attachment.Id, AttachmentStatuses.Uploaded);
         await processor.StopAsync(TestContext.Current.CancellationToken);
 
@@ -131,7 +133,7 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
         using var processor = CreateProcessor();
         await processor.StartAsync(TestContext.Current.CancellationToken);
 
-        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Email, attachment.Id), TestContext.Current.CancellationToken);
         var failed = await WaitForStatusAsync(attachment.Id, AttachmentStatuses.Failed);
         await processor.StopAsync(TestContext.Current.CancellationToken);
 
@@ -154,9 +156,9 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
         using var processor = CreateProcessor();
         await processor.StartAsync(TestContext.Current.CancellationToken);
 
-        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Email, attachment.Id), TestContext.Current.CancellationToken);
         await uploadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Email, attachment.Id), TestContext.Current.CancellationToken);
         await Task.Delay(TimeSpan.FromMilliseconds(100), TestContext.Current.CancellationToken);
         releaseUpload.SetResult();
         var uploaded = await WaitForStatusAsync(attachment.Id, AttachmentStatuses.Uploaded);
@@ -178,7 +180,7 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
 
         using var processor = CreateProcessor();
         await processor.StartAsync(TestContext.Current.CancellationToken);
-        await _channel.EnqueueAsync(attachment.Id, TestContext.Current.CancellationToken);
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Email, attachment.Id), TestContext.Current.CancellationToken);
         await WaitUntilAsync(() => !_staging.Exists(attachment.Id));
         await processor.StopAsync(TestContext.Current.CancellationToken);
 
@@ -223,6 +225,80 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
 
         await using var ctx = _fixture.CreateContext();
         Assert.Equal(AttachmentStatuses.Pending, (await ctx.EmailAttachments.SingleAsync(a => a.Id == lost.Id, TestContext.Current.CancellationToken)).StatusId);
+    }
+
+    [Fact]
+    public async Task Process_QueuedTemplateAttachment_UploadsStagedFileAndMarksUploaded()
+    {
+        var attachment = await AddPendingTemplateAttachmentAsync(staged: true);
+        using var processor = CreateProcessor();
+        await processor.StartAsync(TestContext.Current.CancellationToken);
+
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Template, attachment.Id), TestContext.Current.CancellationToken);
+        var settled = await WaitForTemplateStatusAsync(attachment.Id, AttachmentStatuses.Uploaded);
+        await processor.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AttachmentStatuses.Uploaded, settled.StatusId);
+        Assert.Equal([TestFiles.Pdf], _uploaded);
+        await _store.Received(1).UploadAsync(attachment.BlobName, Arg.Any<Stream>(), "application/pdf", Arg.Any<CancellationToken>());
+        Assert.False(_staging.Exists(attachment.Id));
+    }
+
+    [Fact]
+    public async Task Start_InterruptedTemplateUploads_RequeuesStagedOnesAndFailsLostOnes()
+    {
+        var staged = await AddPendingTemplateAttachmentAsync(staged: true);
+        var lost = await AddPendingTemplateAttachmentAsync(staged: false);
+        _fixture.Time.Advance(TimeSpan.FromMinutes(1));
+        using var processor = CreateProcessor();
+
+        await processor.StartAsync(TestContext.Current.CancellationToken);
+        var uploaded = await WaitForTemplateStatusAsync(staged.Id, AttachmentStatuses.Uploaded);
+        var failed = await WaitForTemplateStatusAsync(lost.Id, AttachmentStatuses.Failed);
+        await processor.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AttachmentStatuses.Uploaded, uploaded.StatusId);
+        Assert.Equal(AttachmentStatuses.Failed, failed.StatusId);
+        Assert.NotNull(failed.FailureReason);
+    }
+
+    [Fact]
+    public async Task Process_TemplateStoreFailsEveryAttempt_MarksFailedAndDeletesTheBlob()
+    {
+        var attachment = await AddPendingTemplateAttachmentAsync(staged: true);
+        _store.UploadAsync(attachment.BlobName, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new IOException("storage unreachable"));
+        using var processor = CreateProcessor(maxUploadAttempts: 2);
+        await processor.StartAsync(TestContext.Current.CancellationToken);
+
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Template, attachment.Id), TestContext.Current.CancellationToken);
+        var failed = await WaitForTemplateStatusAsync(attachment.Id, AttachmentStatuses.Failed);
+        await processor.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(failed.FailureReason);
+        Assert.False(_staging.Exists(attachment.Id));
+        await _store.Received(2).UploadAsync(attachment.BlobName, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _store.Received(1).DeleteIfExistsAsync(attachment.BlobName, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Process_TemplateDeactivatedBeforeUpload_SkipsItAndDeletesStagedFile()
+    {
+        var attachment = await AddPendingTemplateAttachmentAsync(staged: true);
+        await using (var ctx = _fixture.CreateContext())
+        {
+            ctx.Remove(await ctx.EmailTemplates.SingleAsync(t => t.Id == attachment.TemplateId, TestContext.Current.CancellationToken));
+            await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var processor = CreateProcessor();
+        await processor.StartAsync(TestContext.Current.CancellationToken);
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Template, attachment.Id), TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => !_staging.Exists(attachment.Id));
+        await processor.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(_staging.Exists(attachment.Id));
+        await _store.DidNotReceive().UploadAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     public async ValueTask DisposeAsync()
@@ -282,6 +358,50 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
         }
 
         return attachment;
+    }
+
+    private async Task<EmailTemplateAttachment> AddPendingTemplateAttachmentAsync(bool staged)
+    {
+        var admin = await _fixture.AddUserAsync($"{Guid.NewGuid():N}@contoso.com");
+        var id = Guid.NewGuid();
+        var attachment = new EmailTemplateAttachment
+        {
+            Id = id,
+            FileName = "report.pdf",
+            DocumentTypeId = DocumentTypes.Pdf,
+            ContentType = "application/pdf",
+            SizeBytes = TestFiles.Pdf.Length,
+            BlobName = $"templates/{id:N}",
+            StatusId = AttachmentStatuses.Pending,
+        };
+        var team = await _fixture.AddTeamAsync();
+        await _fixture.AddTemplateAsync(team.Id, admin.Id, null, attachment);
+        if (staged)
+        {
+            await using var file = new MemoryStream(TestFiles.Pdf);
+            await _staging.WriteAsync(id, file, TestContext.Current.CancellationToken);
+        }
+
+        return attachment;
+    }
+
+    private async Task<EmailTemplateAttachment> WaitForTemplateStatusAsync(Guid id, AttachmentStatuses status)
+    {
+        EmailTemplateAttachment? attachment = null;
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            await using var ctx = _fixture.CreateContext();
+            attachment = await ctx.EmailTemplateAttachments.AsNoTracking().SingleAsync(a => a.Id == id, TestContext.Current.CancellationToken);
+            if (attachment.StatusId == status)
+            {
+                return attachment;
+            }
+
+            _fixture.Time.Advance(TimeSpan.FromSeconds(5));
+            await Task.Delay(TimeSpan.FromMilliseconds(25), TestContext.Current.CancellationToken);
+        }
+
+        return attachment!;
     }
 
     private async Task<EmailAttachment> WaitForStatusAsync(Guid id, AttachmentStatuses status)

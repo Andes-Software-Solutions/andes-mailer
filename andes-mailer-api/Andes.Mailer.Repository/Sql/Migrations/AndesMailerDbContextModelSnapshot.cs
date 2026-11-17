@@ -169,6 +169,9 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.Property<Guid>("TeamId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<byte[]>("Version")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -182,6 +185,8 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.HasIndex("DateDeactivated");
 
                     b.HasIndex("StatusId");
+
+                    b.HasIndex("TemplateId");
 
                     b.HasIndex("TeamId", "StatusId");
 
@@ -366,6 +371,155 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                             Description = "Blind-copied recipient",
                             Name = "Bcc"
                         });
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.Templates.EmailTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BodyHtml")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("DateCreated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateDeactivated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateModified")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorId");
+
+                    b.HasIndex("DateDeactivated");
+
+                    b.HasIndex("TeamId", "Name")
+                        .IsUnique()
+                        .HasFilter("[DateDeactivated] IS NULL");
+
+                    b.ToTable("EmailTemplate", "Core");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.Templates.EmailTemplateAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BlobName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(127)
+                        .HasColumnType("nvarchar(127)");
+
+                    b.Property<DateTimeOffset>("DateCreated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateDeactivated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateModified")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DocumentTypeId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("StatusId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DateDeactivated");
+
+                    b.HasIndex("DocumentTypeId");
+
+                    b.HasIndex("StatusId");
+
+                    b.HasIndex("TemplateId");
+
+                    b.ToTable("EmailTemplateAttachment", "Core");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.Templates.EmailTemplateRecipient", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RecipientTypeId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecipientTypeId");
+
+                    b.HasIndex("TemplateId", "Address")
+                        .IsUnique();
+
+                    b.ToTable("EmailTemplateRecipient", "Core");
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Teams.Team", b =>
@@ -565,6 +719,12 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                             Id = 12,
                             Description = "Reads, creates, changes, and deletes a team's emails",
                             Name = "ComposeTeamEmails"
+                        },
+                        new
+                        {
+                            Id = 13,
+                            Description = "Creates, changes, and deactivates a team's email templates",
+                            Name = "ManageTeamTemplates"
                         });
                 });
 
@@ -687,6 +847,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         },
                         new
                         {
+                            RoleId = 1,
+                            PermissionId = 13
+                        },
+                        new
+                        {
                             RoleId = 2,
                             PermissionId = 7
                         },
@@ -714,6 +879,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         {
                             RoleId = 2,
                             PermissionId = 6
+                        },
+                        new
+                        {
+                            RoleId = 2,
+                            PermissionId = 13
                         },
                         new
                         {
@@ -816,11 +986,18 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Andes.Mailer.Entity.Emails.Templates.EmailTemplate", "Template")
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Author");
 
                     b.Navigation("Status");
 
                     b.Navigation("Team");
+
+                    b.Navigation("Template");
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Emails.EmailAttachment", b =>
@@ -867,6 +1044,71 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.Navigation("Email");
 
                     b.Navigation("RecipientType");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.Templates.EmailTemplate", b =>
+                {
+                    b.HasOne("Andes.Mailer.Entity.Users.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Teams.Team", "Team")
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Author");
+
+                    b.Navigation("Team");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.Templates.EmailTemplateAttachment", b =>
+                {
+                    b.HasOne("Andes.Mailer.Entity.Emails.DocumentType", "DocumentType")
+                        .WithMany()
+                        .HasForeignKey("DocumentTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Emails.AttachmentStatus", "Status")
+                        .WithMany()
+                        .HasForeignKey("StatusId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Emails.Templates.EmailTemplate", "Template")
+                        .WithMany("Attachments")
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("DocumentType");
+
+                    b.Navigation("Status");
+
+                    b.Navigation("Template");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.Templates.EmailTemplateRecipient", b =>
+                {
+                    b.HasOne("Andes.Mailer.Entity.Emails.RecipientType", "RecipientType")
+                        .WithMany()
+                        .HasForeignKey("RecipientTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Emails.Templates.EmailTemplate", "Template")
+                        .WithMany("Recipients")
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("RecipientType");
+
+                    b.Navigation("Template");
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Teams.TeamMember", b =>
@@ -935,6 +1177,13 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Emails.Email", b =>
+                {
+                    b.Navigation("Attachments");
+
+                    b.Navigation("Recipients");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.Templates.EmailTemplate", b =>
                 {
                     b.Navigation("Attachments");
 

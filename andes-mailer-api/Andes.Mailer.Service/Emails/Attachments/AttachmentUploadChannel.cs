@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 
+using Andes.Mailer.Service.Emails.Attachments.Models;
 using Andes.Mailer.Service.Options;
 
 using Microsoft.Extensions.Options;
@@ -7,13 +8,13 @@ using Microsoft.Extensions.Options;
 namespace Andes.Mailer.Service.Emails.Attachments;
 
 /// <summary>
-/// Carries the ids of staged attachments from the request that received them to the background upload.
+/// Carries staged attachments from the request that received them to the background upload.
 /// </summary>
 /// <param name="options">The upload settings that size the channel.</param>
 public sealed class AttachmentUploadChannel(IOptions<AttachmentUploadOptions> options)
 {
     // Bounded and waiting when full, so a burst of uploads slows the requests down instead of growing memory without limit.
-    private readonly Channel<Guid> _channel = Channel.CreateBounded<Guid>(new BoundedChannelOptions(options.Value.QueueCapacity)
+    private readonly Channel<StagedAttachmentJob> _channel = Channel.CreateBounded<StagedAttachmentJob>(new BoundedChannelOptions(options.Value.QueueCapacity)
     {
         FullMode = BoundedChannelFullMode.Wait,
     });
@@ -21,17 +22,17 @@ public sealed class AttachmentUploadChannel(IOptions<AttachmentUploadOptions> op
     /// <summary>
     /// Queues a staged attachment for upload.
     /// </summary>
-    /// <param name="attachmentId">The attachment's id.</param>
+    /// <param name="job">The attachment and what it belongs to.</param>
     /// <param name="cancellationToken">A token that stops waiting for room in the channel.</param>
-    /// <returns>A task that completes when the id is queued.</returns>
-    public ValueTask EnqueueAsync(Guid attachmentId, CancellationToken cancellationToken) =>
-        _channel.Writer.WriteAsync(attachmentId, cancellationToken);
+    /// <returns>A task that completes when the attachment is queued.</returns>
+    public ValueTask EnqueueAsync(StagedAttachmentJob job, CancellationToken cancellationToken) =>
+        _channel.Writer.WriteAsync(job, cancellationToken);
 
     /// <summary>
-    /// Reads queued attachment ids as they arrive.
+    /// Reads queued attachments as they arrive.
     /// </summary>
     /// <param name="cancellationToken">A token that ends the read.</param>
-    /// <returns>The ids, each delivered to exactly one reader.</returns>
-    public IAsyncEnumerable<Guid> ReadAllAsync(CancellationToken cancellationToken) =>
+    /// <returns>The attachments, each delivered to exactly one reader.</returns>
+    public IAsyncEnumerable<StagedAttachmentJob> ReadAllAsync(CancellationToken cancellationToken) =>
         _channel.Reader.ReadAllAsync(cancellationToken);
 }

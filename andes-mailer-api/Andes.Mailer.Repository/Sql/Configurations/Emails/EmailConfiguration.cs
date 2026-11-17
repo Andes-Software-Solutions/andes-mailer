@@ -35,8 +35,13 @@ public sealed class EmailConfiguration : BaseModifiedEntityConfiguration<Email, 
             .WithMany()
             .HasForeignKey(e => e.StatusId)
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(e => e.Template)
+            .WithMany()
+            .HasForeignKey(e => e.TemplateId)
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(e => new { e.TeamId, e.StatusId });
         builder.HasIndex(e => e.AuthorId);
+        builder.HasIndex(e => e.TemplateId);
 
         // Beside the row's own deactivation filter, so a deactivated team's emails stay hidden with it.
         builder.HasQueryFilter("TeamDeactivation", e => e.Team!.DateDeactivated == null);

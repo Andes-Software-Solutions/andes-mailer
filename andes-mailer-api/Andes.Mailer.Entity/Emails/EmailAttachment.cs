@@ -1,12 +1,13 @@
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Entity.Base;
+using Andes.Mailer.Entity.Emails.Interfaces;
 
 namespace Andes.Mailer.Entity.Emails;
 
 /// <summary>
 /// Represents a document attached to an email and held in blob storage.
 /// </summary>
-public sealed class EmailAttachment : BaseModifiedEntity<Guid>
+public sealed class EmailAttachment : BaseModifiedEntity<Guid>, IStagedAttachment
 {
     /// <summary>
     /// Gets or sets the id of the email.

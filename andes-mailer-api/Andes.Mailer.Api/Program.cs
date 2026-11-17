@@ -36,6 +36,8 @@ app.MapTeamEndpoints();
 app.MapTeamMemberEndpoints();
 app.MapEmailEndpoints();
 app.MapEmailAttachmentEndpoints();
+app.MapEmailTemplateEndpoints();
+app.MapEmailTemplateAttachmentEndpoints();
 
 await app.RunAsync();
 

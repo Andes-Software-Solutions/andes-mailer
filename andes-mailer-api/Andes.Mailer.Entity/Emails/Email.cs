@@ -1,5 +1,6 @@
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Entity.Base;
+using Andes.Mailer.Entity.Emails.Templates;
 using Andes.Mailer.Entity.Teams;
 using Andes.Mailer.Entity.Users;
 
@@ -32,6 +33,17 @@ public sealed class Email : BaseModifiedEntity<Guid>
     /// Gets or sets the user who started the email.
     /// </summary>
     public User? Author { get; set; }
+
+    /// <summary>
+    /// Gets or sets the id of the template the email was made from.
+    /// </summary>
+    /// <value>The template's id, or <see langword="null"/> for an email started from scratch.</value>
+    public Guid? TemplateId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the template the email was made from.
+    /// </summary>
+    public EmailTemplate? Template { get; set; }
 
     /// <summary>
     /// Gets or sets the subject.

@@ -5,6 +5,8 @@ using Andes.Mailer.Dto.Emails;
 using Andes.Mailer.Dto.Pagination;
 using Andes.Mailer.Entity.Emails;
 using Andes.Mailer.Entity.Users;
+using Andes.Mailer.Repository.Blob;
+using Andes.Mailer.Repository.Blob.Exceptions;
 using Andes.Mailer.Repository.Sql.DbContexts;
 using Andes.Mailer.Service.Emails.Exceptions;
 using Andes.Mailer.Service.Exceptions;
@@ -12,6 +14,7 @@ using Andes.Mailer.Service.Users;
 using Andes.Mailer.Service.Users.Models;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Andes.Mailer.Service.Emails;
 
@@ -50,6 +53,22 @@ public interface IEmailService
     Task<EmailDto> CreateAsync(Guid teamId, Guid authorId, CreateEmailActionDto action, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Starts a draft email for a team from one of its templates, copying the template's subject, body, recipients, and stored attachments.
+    /// </summary>
+    /// <remarks>
+    /// The draft is independent of the template from then on: it has its own copy of every document, and later changes to the template
+    /// never reach it. Attachments whose upload failed are left out.
+    /// </remarks>
+    /// <param name="teamId">The team's id.</param>
+    /// <param name="authorId">The Entra object id of the signed-in user, who must be an active user.</param>
+    /// <param name="action">The template to start from.</param>
+    /// <param name="cancellationToken">A token that cancels the operation.</param>
+    /// <returns>The new draft.</returns>
+    /// <exception cref="NotFoundException">The team has no active template with the id, or storage no longer holds one of its documents.</exception>
+    /// <exception cref="TemplateNotReadyException">One of the template's attachments is still uploading.</exception>
+    Task<EmailDto> CreateFromTemplateAsync(Guid teamId, Guid authorId, CreateEmailFromTemplateActionDto action, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Replaces the subject, body, and recipients of one of a team's drafts.
     /// </summary>
     /// <param name="teamId">The team's id.</param>
@@ -79,13 +98,18 @@ public interface IEmailService
 /// </summary>
 /// <param name="ctx">The store.</param>
 /// <param name="directory">The directory recipients are resolved against.</param>
-public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService directory) : IEmailService
+/// <param name="store">The blob storage a template's documents are copied in.</param>
+/// <param name="logger">The logger.</param>
+public sealed partial class EmailService(AndesMailerDbContext ctx, IDirectoryUserService directory, IAttachmentStore store, ILogger<EmailService> logger) : IEmailService
 {
     // One message for "missing" and "another team's", so the API never confirms that another team's email exists.
     private const string NotFoundMessage = "The email was not found.";
+    private const string TemplateNotFoundMessage = "The template was not found.";
 
     private readonly AndesMailerDbContext _ctx = ctx;
     private readonly IDirectoryUserService _directory = directory;
+    private readonly IAttachmentStore _store = store;
+    private readonly ILogger<EmailService> _logger = logger;
 
     /// <inheritdoc/>
     public async Task<PaginatedResponseDto<EmailSummaryDto>> ListAsync(Guid teamId, ListEmailsActionDto action, CancellationToken cancellationToken)
@@ -133,6 +157,99 @@ public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService
         await ApplyRecipientsAsync(email, action.Recipients, cancellationToken);
         _ctx.Add(email);
         await SaveAsync(cancellationToken);
+
+        return EmailMapper.MapToEmailDto(email);
+    }
+
+    /// <inheritdoc/>
+    public async Task<EmailDto> CreateFromTemplateAsync(Guid teamId, Guid authorId, CreateEmailFromTemplateActionDto action, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        var template = await _ctx.EmailTemplates
+            .AsNoTracking()
+            .Include(t => t.Recipients)
+            .Include(t => t.Attachments)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(t => t.Id == action.TemplateId && t.TeamId == teamId, cancellationToken)
+            ?? throw new NotFoundException(TemplateNotFoundMessage);
+        if (template.Attachments.Any(a => a.StatusId is AttachmentStatuses.Pending or AttachmentStatuses.Uploading))
+        {
+            throw new TemplateNotReadyException();
+        }
+
+        // The id up front, so the copied documents can be named under the email before it is saved.
+        var email = new Email
+        {
+            Id = Guid.CreateVersion7(),
+            TeamId = teamId,
+            AuthorId = authorId,
+            TemplateId = template.Id,
+
+            // Stored sanitized and trimmed on the template already.
+            Subject = template.Subject,
+            BodyHtml = template.BodyHtml,
+            StatusId = EmailStatuses.Draft,
+        };
+
+        // Through the email path, so the directory names the recipients as it does for any draft.
+        EmailRecipientActionDto[] recipients =
+        [
+            .. template.Recipients
+                .OrderBy(r => r.RecipientTypeId)
+                .ThenBy(r => r.Position)
+                .Select(r => new EmailRecipientActionDto(r.Address, r.RecipientTypeId)),
+        ];
+        await ApplyRecipientsAsync(email, recipients, cancellationToken);
+
+        List<string> copied = [];
+        var saving = false;
+        try
+        {
+            foreach (var source in template.Attachments.Where(a => a.StatusId == AttachmentStatuses.Uploaded).OrderBy(a => a.DateCreated).ThenBy(a => a.Id))
+            {
+                var id = Guid.CreateVersion7();
+                var attachment = new EmailAttachment
+                {
+                    Id = id,
+                    EmailId = email.Id,
+                    FileName = source.FileName,
+                    DocumentTypeId = source.DocumentTypeId,
+                    ContentType = source.ContentType,
+                    SizeBytes = source.SizeBytes,
+                    BlobName = $"{email.Id:N}/{id:N}",
+                    StatusId = AttachmentStatuses.Uploaded,
+                };
+
+                // Recorded before the copy: a copy cut short can still have created the destination, and deleting a missing blob is harmless.
+                copied.Add(attachment.BlobName);
+
+                // Copied, never shared: removing the email's attachment deletes its document, which must not take the template's with it.
+                await _store.CopyAsync(source.BlobName, attachment.BlobName, cancellationToken);
+                email.Attachments.Add(attachment);
+            }
+
+            _ctx.Add(email);
+            saving = true;
+            await SaveAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // A save can fail after its commit landed: a lost acknowledgement retried by the execution strategy, or a cancellation at
+            // the last moment. Then the draft exists and its documents must stay; when that cannot be told, the copies are left behind.
+            if (saving && await ExistsIgnoringFiltersAsync(email.Id) is not false)
+            {
+                throw;
+            }
+
+            await DeleteCopiesBestEffortAsync(copied);
+            if (ex is BlobNotFoundException)
+            {
+                throw new NotFoundException("One of the template's documents is no longer in storage. Remove it from the template and try again.");
+            }
+
+            throw;
+        }
 
         return EmailMapper.MapToEmailDto(email);
     }
@@ -223,6 +340,42 @@ public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService
         return name.Length <= EmailRecipientLimits.DisplayNameMaxLength ? name : name[..EmailRecipientLimits.DisplayNameMaxLength];
     }
 
+    // A fresh read past the tracker and the email's own filters, so a row deactivated since still counts as saved; null when the store
+    // cannot answer.
+    private async Task<bool?> ExistsIgnoringFiltersAsync(Guid emailId)
+    {
+        try
+        {
+            return await _ctx.Emails.AsNoTracking().IgnoreQueryFilters(["Deactivation", "TeamDeactivation"]).AnyAsync(e => e.Id == emailId, CancellationToken.None);
+        }
+#pragma warning disable CA1031 // Only decides whether to clean up; the original failure is what the caller reports.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogSaveCheckFailed(_logger, ex, emailId);
+
+            return null;
+        }
+    }
+
+    // Not the request's token: a cancelled request must still clean up what it copied.
+    private async Task DeleteCopiesBestEffortAsync(List<string> blobNames)
+    {
+        foreach (var blobName in blobNames)
+        {
+            try
+            {
+                await _store.DeleteIfExistsAsync(blobName, CancellationToken.None);
+            }
+#pragma warning disable CA1031 // Cleanup after a failure already being reported; a leftover copy must not hide that failure.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                LogCopyCleanupFailed(_logger, ex, blobName);
+            }
+        }
+    }
+
     private async Task SaveAsync(CancellationToken cancellationToken)
     {
         try
@@ -234,6 +387,16 @@ public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService
             throw new ConflictException("The email was changed by another request. Read it again and retry.");
         }
     }
+
+    #endregion
+
+    #region Logging
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not delete blob {BlobName} copied for an email that was not saved; it may be left in storage")]
+    private static partial void LogCopyCleanupFailed(ILogger logger, Exception exception, string blobName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not tell whether email {EmailId} was saved; its copied documents are left in storage")]
+    private static partial void LogSaveCheckFailed(ILogger logger, Exception exception, Guid emailId);
 
     #endregion
 }

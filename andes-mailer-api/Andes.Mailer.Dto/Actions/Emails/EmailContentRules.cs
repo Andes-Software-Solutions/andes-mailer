@@ -4,7 +4,7 @@ using FluentValidation;
 
 namespace Andes.Mailer.Dto.Actions.Emails;
 
-// Creating and updating an email accept the same content, so both validators share these rules.
+// Emails and templates accept the same content, so their create and update validators share these rules.
 internal static class EmailContentRules
 {
     #region Private methods
@@ -20,6 +20,9 @@ internal static class EmailContentRules
     #endregion
 
     #region Public static methods
+
+    public static IRuleBuilderOptions<T, string> ValidTemplateName<T>(this IRuleBuilder<T, string> rule) =>
+        rule.NotEmpty().MaximumLength(EmailTemplateLimits.NameMaxLength);
 
     public static IRuleBuilderOptions<T, string> ValidSubject<T>(this IRuleBuilder<T, string> rule) =>
         rule.NotNull().MaximumLength(EmailLimits.SubjectMaxLength);

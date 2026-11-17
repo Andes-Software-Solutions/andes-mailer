@@ -26,8 +26,11 @@ public sealed class AttachmentUploadOptions
     public long MaxFileBytes { get; init; } = 25 * Megabyte;
 
     /// <summary>
-    /// Gets the largest total of all of an email's attachments, in bytes. The default is 25 MB.
+    /// Gets the largest total of all of an email's or a template's attachments, in bytes. The default is 25 MB.
     /// </summary>
+    /// <remarks>
+    /// One cap for both, so a template within it always fits the email made from it.
+    /// </remarks>
     public long MaxEmailBytes { get; init; } = 25 * Megabyte;
 
     /// <summary>

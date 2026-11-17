@@ -78,4 +78,10 @@ public enum Permissions
     /// </summary>
     [Description("Reads, creates, changes, and deletes a team's emails")]
     ComposeTeamEmails = 12,
+
+    /// <summary>
+    /// Creates, changes, and deactivates a team's email templates.
+    /// </summary>
+    [Description("Creates, changes, and deactivates a team's email templates")]
+    ManageTeamTemplates = 13,
 }
