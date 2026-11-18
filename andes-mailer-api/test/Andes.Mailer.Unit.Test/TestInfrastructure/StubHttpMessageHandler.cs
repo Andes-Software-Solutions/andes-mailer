@@ -10,9 +10,15 @@ public sealed class StubHttpMessageHandler(string json) : HttpMessageHandler
 
     public Uri? LastRequestUri { get; private set; }
 
+    public IReadOnlyDictionary<string, string> LastRequestHeaders { get; private set; } = new Dictionary<string, string>();
+
+    public int RequestCount { get; private set; }
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         LastRequestUri = request.RequestUri;
+        LastRequestHeaders = request.Headers.ToDictionary(h => h.Key, h => string.Join(',', h.Value), StringComparer.OrdinalIgnoreCase);
+        RequestCount++;
 
         return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {

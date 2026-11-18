@@ -1,6 +1,6 @@
 # Teams
 
-Mail has to leave from somewhere. A team is the group of people who write emails together, plus the shared mailbox those emails are sent from, so the message comes from "Press Office" and not from whoever clicked the button. This page covers the data model, the `/api/teams` and `/api/teams/{teamId}/members` endpoints, how team access is checked, and what to do before you apply the migration that introduces teams. For roles and permissions, see [Users and permissions](users-and-permissions.md). For the drafts a team composes, see [Emails and attachments](emails-and-attachments.md). For how tokens are issued and validated, see [Authentication](authentication.md).
+Mail has to leave from somewhere. A team is the group of people who write emails together, plus the shared mailbox those emails are sent from, so the message comes from "Press Office" and not from whoever clicked the button. This page covers the data model, the `/api/teams` and `/api/teams/{teamId}/members` endpoints, how team access is checked, and what to do before you apply the migration that introduces teams. For roles and permissions, see [Users and permissions](users-and-permissions.md). For the drafts a team composes, see [Emails and attachments](emails-and-attachments.md). For the address lists a team keeps, see [Contact groups](contact-groups.md). For how tokens are issued and validated, see [Authentication](authentication.md).
 
 ## How it fits together
 
@@ -9,6 +9,7 @@ Mail has to leave from somewhere. A team is the group of people who write emails
 - Roles are **scoped**. `Administrator` is held across the application. `TeamAdministrator` and `TeamMember` are held per team. See [Roles and scopes](#roles-and-scopes).
 - Only an `Administrator` creates, edits, or deactivates teams. A `TeamAdministrator` manages who is in their own team.
 - Every email belongs to a team. Every member of that team can work on all of its drafts.
+- A team keeps its own [contact groups](contact-groups.md): named lists of addresses that any member adds to an email, and that a `TeamAdministrator` maintains. Deactivating the team hides its groups, as it hides its emails and templates.
 
 ### Out of scope for now
 
@@ -23,8 +24,8 @@ These are not built, and the API makes no provision for them:
 | Role | Id | Scope | Held through | Can |
 | --- | --- | --- | --- | --- |
 | `Administrator` | 1 | The whole application | `[Core].[UserRole]` | Everything, in every team, including its emails |
-| `TeamAdministrator` | 2 | One team | `[Core].[TeamMember]` | Add, re-role, and remove members; create, edit, and deactivate [email templates](email-templates.md); compose emails; attach documents |
-| `TeamMember` | 3 | One team | `[Core].[TeamMember]` | View the team and its members; compose emails; attach documents |
+| `TeamAdministrator` | 2 | One team | `[Core].[TeamMember]` | Add, re-role, and remove members; create, edit, and deactivate [email templates](email-templates.md) and [contact groups](contact-groups.md); compose emails; attach documents |
+| `TeamMember` | 3 | One team | `[Core].[TeamMember]` | View the team and its members; compose emails; read [contact groups](contact-groups.md); attach documents |
 
 The scopes are listed in `RoleScopes` (`Andes.Mailer.Common/Constants/Users/`). Check constraints enforce them in the database: `[Core].[UserRole]` accepts only `RoleId` 1, and `[Core].[TeamMember]` accepts only 2 and 3. The API also rejects a global role in a membership request with a 400.
 

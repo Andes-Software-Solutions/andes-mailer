@@ -123,10 +123,11 @@ npx ng test --watch=false
 | Topic | Covers |
 | --- | --- |
 | [Authentication](docs/authentication.md) | Entra sign-in, token validation, background renewal, configuration |
-| [Users and permissions](docs/users-and-permissions.md) | `/api/users`, roles, permission checks, Microsoft Graph setup |
+| [Users and permissions](docs/users-and-permissions.md) | `/api/users`, directory search, roles, permission checks, Microsoft Graph setup |
 | [Teams](docs/teams.md) | `/api/teams`, members, service mailboxes, team access checks |
 | [Emails and attachments](docs/emails-and-attachments.md) | Drafts, recipients, the background upload pipeline, duplicate detection |
 | [Email templates](docs/email-templates.md) | Templates, starting a draft from one, duplicating |
+| [Contact groups](docs/contact-groups.md) | A team's named address lists, adding a group's addresses to an email |
 
 ## Contributing
 

@@ -22,6 +22,120 @@ namespace Andes.Mailer.Repository.Sql.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Andes.Mailer.Entity.ContactGroups.ContactGroup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("DateCreated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateDeactivated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateModified")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("DeactivatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedById");
+
+                    b.HasIndex("DateDeactivated");
+
+                    b.HasIndex("DeactivatedById");
+
+                    b.HasIndex("TeamId", "Name")
+                        .IsUnique()
+                        .HasFilter("[DateDeactivated] IS NULL");
+
+                    b.ToTable("ContactGroup", "Core");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.ContactGroups.ContactGroupMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AddedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("ContactGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("DateCreated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateDeactivated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateModified")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("RemovedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AddedById");
+
+                    b.HasIndex("DateDeactivated");
+
+                    b.HasIndex("RemovedById");
+
+                    b.HasIndex("ContactGroupId", "Address")
+                        .IsUnique()
+                        .HasFilter("[DateDeactivated] IS NULL");
+
+                    b.ToTable("ContactGroupMember", "Core");
+                });
+
             modelBuilder.Entity("Andes.Mailer.Entity.Emails.AttachmentStatus", b =>
                 {
                     b.Property<int>("Id")
@@ -741,6 +855,12 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                             Id = 14,
                             Description = "Duplicates a team's emails and email templates",
                             Name = "DuplicateTeamEmails"
+                        },
+                        new
+                        {
+                            Id = 15,
+                            Description = "Creates, changes, and deactivates a team's contact groups",
+                            Name = "ManageTeamContactGroups"
                         });
                 });
 
@@ -873,6 +993,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         },
                         new
                         {
+                            RoleId = 1,
+                            PermissionId = 15
+                        },
+                        new
+                        {
                             RoleId = 2,
                             PermissionId = 7
                         },
@@ -910,6 +1035,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         {
                             RoleId = 2,
                             PermissionId = 13
+                        },
+                        new
+                        {
+                            RoleId = 2,
+                            PermissionId = 15
                         },
                         new
                         {
@@ -995,6 +1125,50 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         {
                             t.HasCheckConstraint("CK_UserRole_RoleId", "[RoleId] IN (1)");
                         });
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.ContactGroups.ContactGroup", b =>
+                {
+                    b.HasOne("Andes.Mailer.Entity.Users.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Users.User", null)
+                        .WithMany()
+                        .HasForeignKey("DeactivatedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Andes.Mailer.Entity.Teams.Team", "Team")
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Team");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.ContactGroups.ContactGroupMember", b =>
+                {
+                    b.HasOne("Andes.Mailer.Entity.Users.User", null)
+                        .WithMany()
+                        .HasForeignKey("AddedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.ContactGroups.ContactGroup", "ContactGroup")
+                        .WithMany("Members")
+                        .HasForeignKey("ContactGroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Users.User", null)
+                        .WithMany()
+                        .HasForeignKey("RemovedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ContactGroup");
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Emails.Email", b =>
@@ -1205,6 +1379,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.Navigation("Role");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.ContactGroups.ContactGroup", b =>
+                {
+                    b.Navigation("Members");
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Emails.Email", b =>

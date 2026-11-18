@@ -15,8 +15,10 @@ builder.Services.AddAndesMailerSqlPersistence(builder.Configuration);
 builder.Services.AddAndesMailerBlobPersistence(builder.Configuration);
 builder.Services.AddAndesMailerHealth();
 builder.Services.AddAndesMailerAuthentication(builder.Configuration);
+builder.Services.AddAndesMailerRateLimiting(builder.Configuration);
 builder.Services.AddUsers();
 builder.Services.AddTeams();
+builder.Services.AddContactGroups();
 builder.Services.AddEmails(builder.Configuration);
 
 var app = builder.Build();
@@ -29,11 +31,15 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// After authorization, so the directory search limit is partitioned by the caller's oid.
+app.UseRateLimiter();
+
 app.MapAndesMailerOpenApi();
 app.MapAndesMailerHealth();
 app.MapUserEndpoints();
 app.MapTeamEndpoints();
 app.MapTeamMemberEndpoints();
+app.MapContactGroupEndpoints();
 app.MapEmailEndpoints();
 app.MapEmailAttachmentEndpoints();
 app.MapEmailTemplateEndpoints();

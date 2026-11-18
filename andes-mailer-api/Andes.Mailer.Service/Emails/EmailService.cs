@@ -349,16 +349,9 @@ public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService
                 RecipientTypeId = type,
                 Position = position,
                 UserId = account?.Id,
-                DisplayName = account is null ? null : DisplayNameOf(account),
+                DisplayName = account is null ? null : DirectoryUserNames.DisplayNameOf(account, EmailRecipientLimits.DisplayNameMaxLength),
             });
         }
-    }
-
-    private static string DisplayNameOf(DirectoryUser account)
-    {
-        var name = User.ComposeFullName(account.FirstName, account.LastName);
-
-        return name.Length <= EmailRecipientLimits.DisplayNameMaxLength ? name : name[..EmailRecipientLimits.DisplayNameMaxLength];
     }
 
     // Only uploaded documents: a failed one has nothing in storage to copy. The id is set here so the blob can be named after it.
