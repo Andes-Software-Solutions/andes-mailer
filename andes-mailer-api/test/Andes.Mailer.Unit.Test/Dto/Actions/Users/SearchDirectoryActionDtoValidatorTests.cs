@@ -40,6 +40,10 @@ public sealed class SearchDirectoryActionDtoValidatorTests
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(SearchDirectoryActionDto.Query));
     }
 
+    [Fact]
+    public void Validate_MaxLengthQueryWithSurroundingSpaces_IsValid() =>
+        Assert.True(_validator.Validate(new SearchDirectoryActionDto($"  {new string('a', DirectorySearchLimits.QueryMaxLength)}  ")).IsValid);
+
     [Theory]
     [InlineData(0)]
     [InlineData(DirectorySearchLimits.MaxLimit + 1)]

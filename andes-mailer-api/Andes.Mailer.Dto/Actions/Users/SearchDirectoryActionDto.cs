@@ -26,9 +26,8 @@ public sealed partial class SearchDirectoryActionDtoValidator : AbstractValidato
         RuleFor(a => a.Query)
             .Cascade(CascadeMode.Stop)
             .NotNull()
-            .Must(q => q.Trim().Length >= DirectorySearchLimits.QueryMinLength)
-            .WithMessage($"'Query' must hold at least {DirectorySearchLimits.QueryMinLength} characters.")
-            .MaximumLength(DirectorySearchLimits.QueryMaxLength)
+            .Must(q => q.Trim().Length is >= DirectorySearchLimits.QueryMinLength and <= DirectorySearchLimits.QueryMaxLength)
+            .WithMessage($"'Query' must hold between {DirectorySearchLimits.QueryMinLength} and {DirectorySearchLimits.QueryMaxLength} characters.")
 
             // Graph's $search fails on an ampersand, and no other symbol outside these appears in a name or an address.
             .Matches(SearchableText())

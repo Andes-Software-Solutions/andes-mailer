@@ -13,10 +13,12 @@ public sealed class CreateContactGroupActionDtoValidatorTests
     public void Validate_Group_IsValid(string? description) =>
         Assert.True(_validator.Validate(new CreateContactGroupActionDto("Clients", description, Members("a@fabrikam.com", "b@contoso.com"))).IsValid);
 
-    [Fact]
-    public void Validate_EmptyName_FailsOnName()
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Validate_EmptyName_FailsOnName(string name)
     {
-        var result = _validator.Validate(new CreateContactGroupActionDto(string.Empty, null, Members("a@fabrikam.com")));
+        var result = _validator.Validate(new CreateContactGroupActionDto(name, null, Members("a@fabrikam.com")));
 
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(CreateContactGroupActionDto.Name));
     }

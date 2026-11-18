@@ -176,7 +176,8 @@ public sealed class DirectoryUserService(GraphServiceClient graph, HybridCache c
             cancellationToken);
 
         return [.. (response?.Value ?? [])
-            .Select(account => (Account: account, Email: (account.Mail ?? account.UserPrincipalName)?.ToLowerInvariant()))
+            // Whitespace-aware rather than ??: Graph can return an empty mail, which would otherwise hide the sign-in name.
+            .Select(account => (Account: account, Email: (string.IsNullOrWhiteSpace(account.Mail) ? account.UserPrincipalName : account.Mail)?.ToLowerInvariant()))
             .Where(a => a.Account.Id is not null && !string.IsNullOrWhiteSpace(a.Email))
             .Select(a => new DirectoryUser(Guid.Parse(a.Account.Id!), FirstNameOf(a.Account, a.Email!), a.Account.Surname ?? string.Empty, a.Email!))];
     }

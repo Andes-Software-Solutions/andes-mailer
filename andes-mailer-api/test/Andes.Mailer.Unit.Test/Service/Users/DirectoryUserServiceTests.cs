@@ -131,15 +131,21 @@ public sealed class DirectoryUserServiceTests
     public async Task SearchAsync_Accounts_MapsMailOrSignInNameAndSkipsAccountsWithoutAddress()
     {
         var guestId = Guid.NewGuid();
+        var emptyMailId = Guid.NewGuid();
         using var handler = new StubHttpMessageHandler(Accounts(
             $$"""{ "id": "{{_accountId}}", "givenName": "Ana", "surname": "Rojas", "mail": "Ana.Rojas@Contoso.com", "userPrincipalName": "ana@contoso.onmicrosoft.com" }""",
             $$"""{ "id": "{{guestId}}", "displayName": "Ana Guest", "mail": null, "userPrincipalName": "ana@contoso.com" }""",
+            $$"""{ "id": "{{emptyMailId}}", "displayName": "Ana Empty", "mail": "", "userPrincipalName": "Ana.Empty@Contoso.com" }""",
             $$"""{ "id": "{{Guid.NewGuid()}}", "displayName": "No Address" }"""));
 
         var accounts = await SearchAsync(handler, "ana", 10);
 
         Assert.Equal(
-            [new DirectoryUser(_accountId, "Ana", "Rojas", "ana.rojas@contoso.com"), new DirectoryUser(guestId, "Ana Guest", string.Empty, "ana@contoso.com")],
+            [
+                new DirectoryUser(_accountId, "Ana", "Rojas", "ana.rojas@contoso.com"),
+                new DirectoryUser(guestId, "Ana Guest", string.Empty, "ana@contoso.com"),
+                new DirectoryUser(emptyMailId, "Ana Empty", string.Empty, "ana.empty@contoso.com"),
+            ],
             accounts);
     }
 
