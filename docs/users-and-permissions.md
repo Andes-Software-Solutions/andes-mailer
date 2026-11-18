@@ -1,6 +1,6 @@
 # Users and permissions
 
-Signing in with Entra proves who someone is; it says nothing about what they may do. The API keeps its own list of users, gives them roles, and checks a permission before each change to that list, to a team, and to its emails. This page covers the data model, the `/api/users` endpoints, how permission checks work, and the Microsoft Graph setup that adding a user needs. For how tokens are issued and validated, see [Authentication](authentication.md). For teams and their members, see [Teams](teams.md). For the endpoints that check `ComposeTeamEmails` and `CanAttachDocuments`, see [Emails and attachments](emails-and-attachments.md). For the ones that check `ManageTeamTemplates`, see [Email templates](email-templates.md).
+Signing in with Entra proves who someone is; it says nothing about what they may do. The API keeps its own list of users, gives them roles, and checks a permission before each change to that list, to a team, and to its emails. This page covers the data model, the `/api/users` endpoints, how permission checks work, and the Microsoft Graph setup that adding a user needs. For how tokens are issued and validated, see [Authentication](authentication.md). For teams and their members, see [Teams](teams.md). For the endpoints that check `ComposeTeamEmails`, `CanAttachDocuments`, and `DuplicateTeamEmails` on emails, see [Emails and attachments](emails-and-attachments.md). For the ones that check `ManageTeamTemplates` and `DuplicateTeamEmails` on templates, see [Email templates](email-templates.md).
 
 ## How it fits together
 
@@ -43,9 +43,9 @@ Queries on `User` and `UserRole` hide deactivated rows by default (the `Deactiva
 
 | Role | Id | Scope | Permissions |
 | --- | --- | --- | --- |
-| `Administrator` | 1 | Global | All thirteen. In a team, this includes its emails and templates. |
-| `TeamAdministrator` | 2 | One team | `CreateTeamUser`, `ModifyTeamUser`, `DeactivateTeamUser`, `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails`, `ManageTeamTemplates` |
-| `TeamMember` | 3 | One team | `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails` |
+| `Administrator` | 1 | Global | All fourteen. In a team, this includes its emails and templates. |
+| `TeamAdministrator` | 2 | One team | `CreateTeamUser`, `ModifyTeamUser`, `DeactivateTeamUser`, `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails`, `ManageTeamTemplates`, `DuplicateTeamEmails` |
+| `TeamMember` | 3 | One team | `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails`, `DuplicateTeamEmails` |
 
 | Permission | Id | Checked by |
 | --- | --- | --- |
@@ -62,12 +62,13 @@ Queries on `User` and `UserRole` hide deactivated rows by default (the `Deactiva
 | `ViewTeam` | 11 | `GET /api/teams/{teamId}` and `GET` on `/api/teams/{teamId}/members` |
 | `ComposeTeamEmails` | 12 | Every route under `/api/teams/{teamId}/emails`, including attachment reads and `POST .../emails/from-template`; and every route under `/api/teams/{teamId}/templates`, so every team member can read and use templates |
 | `ManageTeamTemplates` | 13 | `POST`, `PUT`, and `DELETE` on `/api/teams/{teamId}/templates`, and `POST` and `DELETE` on `/api/teams/{teamId}/templates/{templateId}/attachments`: creating, changing, and deactivating a template and its documents. Each also needs `ComposeTeamEmails`, and the attachment routes `CanAttachDocuments` |
+| `DuplicateTeamEmails` | 14 | `POST /api/teams/{teamId}/emails/{id}/duplicate` and `POST /api/teams/{teamId}/templates/{id}/duplicate`: copying an email into a new draft and a template into a new template. Both also need `ComposeTeamEmails`, and the template route `ManageTeamTemplates`, so a `TeamMember` can duplicate an email but not a template |
 
-Team creation, editing, and deactivation (8 to 10) are held by `Administrator` only, so a team administrator can manage who is in their team but not the team itself. `ManageTeamTemplates` (13) is held by `Administrator` and `TeamAdministrator`: a `TeamMember` can read and use a team's templates but not change them, and gets a 403 on the write routes. `GET /api/teams` needs no permission; it lists the teams the caller belongs to, or every team for an `Administrator`.
+Team creation, editing, and deactivation (8 to 10) are held by `Administrator` only, so a team administrator can manage who is in their team but not the team itself. `ManageTeamTemplates` (13) is held by `Administrator` and `TeamAdministrator`: a `TeamMember` can read and use a team's templates but not change them, and gets a 403 on the write routes. `DuplicateTeamEmails` (14) is held by all three roles, but duplicating a template also needs `ManageTeamTemplates`, so only `Administrator` and `TeamAdministrator` can do it. `GET /api/teams` needs no permission; it lists the teams the caller belongs to, or every team for an `Administrator`.
 
 The permissions that guard team routes are checked **in the team**: a `TeamMember` in Team A holds nothing in Team B. A user with no role and no team, such as one you just added or reactivated, can do nothing beyond the read endpoints of `/api/users` until someone adds them to a team. See [Teams](teams.md#how-team-access-is-checked) and [Emails and attachments](emails-and-attachments.md#attachments).
 
-The enums are `Roles` and `Permissions` in `Andes.Mailer.Common/Enums/`, and `RoleScopes` in `Andes.Mailer.Common/Constants/Users/` lists which roles are global and which are team roles. The reference rows belong to the code, not to operators: they are seeded with `HasData`, so a change to a role's permissions ships as a new migration. The team grants arrive in the migration `*_AddTeams.cs`, and `ManageTeamTemplates` with its grants in `*_AddEmailTemplates.cs`.
+The enums are `Roles` and `Permissions` in `Andes.Mailer.Common/Enums/`, and `RoleScopes` in `Andes.Mailer.Common/Constants/Users/` lists which roles are global and which are team roles. The reference rows belong to the code, not to operators: they are seeded with `HasData`, so a change to a role's permissions ships as a new migration. The team grants arrive in the migration `*_AddTeams.cs`, `ManageTeamTemplates` and its grants in `*_AddEmailTemplates.cs`, and `DuplicateTeamEmails` and its grants in `*_AddDuplicateTeamEmailsPermission.cs`.
 
 ### Seed data
 

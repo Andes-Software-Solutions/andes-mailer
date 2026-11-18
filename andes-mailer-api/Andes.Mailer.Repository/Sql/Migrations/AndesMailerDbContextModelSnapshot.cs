@@ -725,6 +725,12 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                             Id = 13,
                             Description = "Creates, changes, and deactivates a team's email templates",
                             Name = "ManageTeamTemplates"
+                        },
+                        new
+                        {
+                            Id = 14,
+                            Description = "Duplicates a team's emails and email templates",
+                            Name = "DuplicateTeamEmails"
                         });
                 });
 
@@ -852,6 +858,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         },
                         new
                         {
+                            RoleId = 1,
+                            PermissionId = 14
+                        },
+                        new
+                        {
                             RoleId = 2,
                             PermissionId = 7
                         },
@@ -864,6 +875,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         {
                             RoleId = 2,
                             PermissionId = 12
+                        },
+                        new
+                        {
+                            RoleId = 2,
+                            PermissionId = 14
                         },
                         new
                         {
@@ -899,6 +915,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         {
                             RoleId = 3,
                             PermissionId = 12
+                        },
+                        new
+                        {
+                            RoleId = 3,
+                            PermissionId = 14
                         });
                 });
 

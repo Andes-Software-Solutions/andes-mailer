@@ -175,6 +175,29 @@ public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fi
         await store.Received(3).DeleteIfExistsAsync(blobName, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task DuplicateEmail_StoredDocument_CopiesItSoTheCopyKeepsItWhenTheSourceLosesIt()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, caller);
+        var email = await CreateDraftAsync(client, team);
+        using var upload = await UploadAsync(client, team, email.Id, "Q3 report.pdf", _pdf);
+        Assert.Equal(AttachmentStatuses.Uploaded, (await PollUntilSettledAsync(client, upload.Headers.Location!)).Status);
+
+        using var response = await client.PostAsync(new Uri($"{EmailsPath(team)}/{email.Id}/duplicate", UriKind.Relative), null, TestContext.Current.CancellationToken);
+        var copy = await response.Content.ReadFromJsonAsync<EmailDto>(ApiJson.Options, TestContext.Current.CancellationToken);
+        var attachment = Assert.Single(copy!.Attachments);
+        using var removeSource = await client.DeleteAsync(upload.Headers.Location, TestContext.Current.CancellationToken);
+        var downloaded = await client.GetByteArrayAsync(new Uri($"{EmailsPath(team)}/{copy.Id}/attachments/{attachment.Id}/content", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(("Q3 report.pdf", AttachmentStatuses.Uploaded), (attachment.FileName, attachment.Status));
+        Assert.Equal(HttpStatusCode.NoContent, removeSource.StatusCode);
+        Assert.Equal(_pdf, downloaded);
+    }
+
     #region Private methods
 
     private static string EmailsPath(Guid teamId) => $"/api/teams/{teamId}/emails";

@@ -84,4 +84,10 @@ public enum Permissions
     /// </summary>
     [Description("Creates, changes, and deactivates a team's email templates")]
     ManageTeamTemplates = 13,
+
+    /// <summary>
+    /// Duplicates a team's emails and email templates.
+    /// </summary>
+    [Description("Duplicates a team's emails and email templates")]
+    DuplicateTeamEmails = 14,
 }

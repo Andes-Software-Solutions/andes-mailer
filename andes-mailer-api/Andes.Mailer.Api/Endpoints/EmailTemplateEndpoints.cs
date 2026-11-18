@@ -32,6 +32,13 @@ internal static class EmailTemplateEndpoints
     private static async Task<Ok<EmailTemplateDto>> UpdateEmailTemplate(Guid teamId, Guid id, UpdateEmailTemplateActionDto action, IEmailTemplateService templates, CancellationToken cancellationToken) =>
         TypedResults.Ok(await templates.UpdateAsync(teamId, id, action, cancellationToken));
 
+    private static async Task<Created<EmailTemplateDto>> DuplicateEmailTemplate(Guid teamId, Guid id, DuplicateEmailTemplateActionDto action, ClaimsPrincipal caller, IEmailTemplateService templates, CancellationToken cancellationToken)
+    {
+        var template = await templates.DuplicateAsync(teamId, id, caller.GetCallerId(), action, cancellationToken);
+
+        return TypedResults.Created($"/api/teams/{teamId}/templates/{template.Id}", template);
+    }
+
     private static async Task<NoContent> DeleteEmailTemplate(Guid teamId, Guid id, IEmailTemplateService templates, CancellationToken cancellationToken)
     {
         await templates.DeleteAsync(teamId, id, cancellationToken);
@@ -81,6 +88,19 @@ internal static class EmailTemplateEndpoints
             .WithName(nameof(UpdateEmailTemplate))
             .WithSummary("Replaces the name, subject, body, and recipients of one of a team's email templates.")
             .WithDescription("Emails already made from the template keep the content they were made with.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        // Duplicating creates a template, so it also needs the right to manage them.
+        group.MapPost("/{id:guid}/duplicate", DuplicateEmailTemplate)
+            .AddEndpointFilter(new TeamPermissionEndpointFilter(Permissions.ManageTeamTemplates))
+            .AddEndpointFilter(new TeamPermissionEndpointFilter(Permissions.DuplicateTeamEmails))
+            .AddEndpointFilter<ValidationEndpointFilter<DuplicateEmailTemplateActionDto>>()
+            .WithName(nameof(DuplicateEmailTemplate))
+            .WithSummary("Creates an email template for a team as a copy of another of its templates.")
+            .WithDescription("Copies the template's subject, body, recipients, and stored attachments. Without a name, the copy is named \"{Name} (copy)\", or the next free \"{Name} (copy N)\".")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)

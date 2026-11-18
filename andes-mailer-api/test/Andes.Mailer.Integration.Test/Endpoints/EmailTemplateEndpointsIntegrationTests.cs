@@ -312,6 +312,92 @@ public sealed class EmailTemplateEndpointsIntegrationTests(SqlServerFixture fixt
         Assert.False(await readCtx.Emails.AnyAsync(e => e.TemplateId == template.Id, TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task DuplicateTemplate_TeamAdministrator_ReturnsCreatedCopyNamedAfterTheSourceWithItsDocument()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var admin = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, admin);
+        var template = await CreateTemplateAsync(client, team, new EmailRecipientActionDto("amy@external.org", RecipientTypes.To));
+        await UploadStoredAsync(client, team, template.Id);
+
+        using var response = await client.PostAsJsonAsync($"{TemplatesPath(team)}/{template.Id}/duplicate", new DuplicateEmailTemplateActionDto(null), ApiJson.Options, TestContext.Current.CancellationToken);
+        var copy = await response.Content.ReadFromJsonAsync<EmailTemplateDto>(ApiJson.Options, TestContext.Current.CancellationToken);
+        var attachment = Assert.Single(copy!.Attachments);
+        var downloaded = await client.GetByteArrayAsync(new Uri($"{TemplatesPath(team)}/{copy.Id}/attachments/{attachment.Id}/content", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal($"{TemplatesPath(team)}/{copy.Id}", response.Headers.Location?.OriginalString);
+        Assert.Equal($"{template.Name} (copy)", copy.Name);
+        Assert.Equal((template.Subject, template.BodyHtml), (copy.Subject, copy.BodyHtml));
+        Assert.Equal(template.Recipients, copy.Recipients);
+        Assert.Equal(_pdf, downloaded);
+    }
+
+    [Fact]
+    public async Task DuplicateTemplate_TeamMember_ReturnsForbidden()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var admin = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        var member = await TestCallers.SeedMemberAsync(_fixture, team);
+        await using var factory = CreateFactory();
+        using var adminClient = TestCallers.CreateClient(factory, admin);
+        using var memberClient = TestCallers.CreateClient(factory, member);
+        var template = await CreateTemplateAsync(adminClient, team);
+
+        using var response = await memberClient.PostAsJsonAsync($"{TemplatesPath(team)}/{template.Id}/duplicate", new DuplicateEmailTemplateActionDto(null), ApiJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DuplicateTemplate_CallerNotAMember_ReturnsNotFound()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var admin = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        var outsider = await TestCallers.SeedAsync(_fixture);
+        await using var factory = CreateFactory();
+        using var adminClient = TestCallers.CreateClient(factory, admin);
+        using var outsiderClient = TestCallers.CreateClient(factory, outsider);
+        var template = await CreateTemplateAsync(adminClient, team);
+
+        using var response = await outsiderClient.PostAsJsonAsync($"{TemplatesPath(team)}/{template.Id}/duplicate", new DuplicateEmailTemplateActionDto(null), ApiJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DuplicateTemplate_NameTakenInTheTeam_ReturnsConflict()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var admin = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, admin);
+        var template = await CreateTemplateAsync(client, team);
+
+        using var response = await client.PostAsJsonAsync($"{TemplatesPath(team)}/{template.Id}/duplicate", new DuplicateEmailTemplateActionDto(template.Name), ApiJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("{\"name\":\"\"}")]
+    public async Task DuplicateTemplate_NoBodyOrBlankName_ReturnsValidationProblem(string body)
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var admin = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, admin);
+        var template = await CreateTemplateAsync(client, team);
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        using var response = await client.PostAsync(new Uri($"{TemplatesPath(team)}/{template.Id}/duplicate", UriKind.Relative), content, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     #region Private methods
 
     private static async Task<Uri> UploadStoredAsync(HttpClient client, Guid teamId, Guid templateId)
