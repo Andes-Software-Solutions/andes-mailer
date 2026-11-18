@@ -114,7 +114,7 @@ public sealed class TemplateAttachmentService(AndesMailerDbContext ctx, Attachme
                 StatusId = AttachmentStatuses.Pending,
             },
             ct => UsedBytesAsync(templateId, ct),
-            (hash, ct) => DuplicateFileNameAsync(templateId, hash, ct),
+            (hash, ct) => FindDuplicateDocumentAsync(templateId, hash, ct),
             cancellationToken);
 
         return EmailTemplateMapper.MapToAttachmentDto(attachment);
@@ -166,7 +166,7 @@ public sealed class TemplateAttachmentService(AndesMailerDbContext ctx, Attachme
             .SumAsync(a => a.SizeBytes, cancellationToken);
 
     // The same attachments the total counts: a failed upload holds nothing, so the document may be sent again.
-    private Task<string?> DuplicateFileNameAsync(Guid templateId, byte[] hash, CancellationToken cancellationToken) =>
+    private Task<string?> FindDuplicateDocumentAsync(Guid templateId, byte[] hash, CancellationToken cancellationToken) =>
         _ctx.EmailTemplateAttachments
             .AsNoTracking()
             .Where(a => a.TemplateId == templateId && a.StatusId != AttachmentStatuses.Failed && a.ContentHash == hash)
