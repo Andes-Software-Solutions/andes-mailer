@@ -101,7 +101,7 @@ The routes moved from `/api/emails` to `/api/teams/{teamId}/emails`. **This is a
 | `GET /api/teams/{teamId}/emails/{id}` | 200 with the email, its recipients, and its attachments | 403; 404 |
 | `POST /api/teams/{teamId}/emails` | 201 with the email and a `Location` of `/api/teams/{teamId}/emails/{id}` | 400; 403; 404 |
 | `POST /api/teams/{teamId}/emails/from-template` | 201 with the email and a `Location` of `/api/teams/{teamId}/emails/{id}` | 400; 403; 404 if the team has no such active template or storage has lost one of its documents; 409 if a template attachment is still uploading |
-| `POST /api/teams/{teamId}/emails/{id}/duplicate` | 201 with the new draft and a `Location` of `/api/teams/{teamId}/emails/{id}` | 403; 404 if the team has no such email or storage has lost one of its documents; 409 if an attachment is still uploading or the email changed at the same moment |
+| `POST /api/teams/{teamId}/emails/{id}/duplicate` | 201 with the new draft and a `Location` of `/api/teams/{teamId}/emails/{id}` | 403; 404 if the team has no such email or storage has lost one of its documents; 409 if an attachment is still uploading |
 | `PUT /api/teams/{teamId}/emails/{id}` | 200 with the updated email | 400; 403; 404; 409 if the `version` is stale or the email is no longer a draft |
 | `DELETE /api/teams/{teamId}/emails/{id}` | 204 | 403; 404; 409 if another request changed the email at the same moment |
 
@@ -206,12 +206,14 @@ What the new draft gets:
 
 The copy is independent: editing it, removing its attachments, or deleting it never touches the source, and the reverse holds too.
 
+The copy is a snapshot of the source as it was read. Duplicating takes no `version` and never conflicts with a change to the source: an update or delete that lands while the copy is being made does not reach the copy, and the call still returns 201. If an attachment is removed from the source while its document is being copied, the copy fails with the missing-document 404 below, and nothing is created.
+
 | Status | When |
 | --- | --- |
 | 201 | The draft was created. |
 | 403 | The caller is in the team but their role lacks `DuplicateTeamEmails`. Not returned today, because both team roles hold it. |
 | 404 | The team is missing or the caller is not in it, or the team has no active email with the id (another team's email gives the same answer), or storage no longer holds one of the source's documents. |
-| 409 | An attachment of the source is `Pending` or `Uploading` (`EmailNotReadyException`), or another request changed the email at the same moment. |
+| 409 | An attachment of the source is `Pending` or `Uploading` (`EmailNotReadyException`). |
 
 The 404 for a missing document carries advice that depends on the source. For a draft it reads "One of the email's documents is no longer in storage. Remove it from the email and try again.", because you can remove the dead attachment. For a sent email it reads "One of the email's documents is no longer in storage, so the email cannot be duplicated.", because a sent email can no longer change.
 
