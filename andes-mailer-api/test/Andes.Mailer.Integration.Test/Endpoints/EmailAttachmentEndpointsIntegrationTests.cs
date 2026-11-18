@@ -89,6 +89,26 @@ public sealed class EmailAttachmentEndpointsIntegrationTests(SqlServerFixture fi
     }
 
     [Fact]
+    public async Task UploadAttachment_SameDocumentUnderAnotherName_ReturnsConflictAndKeepsOnlyTheFirst()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, caller);
+        var email = await CreateDraftAsync(client, team);
+        using var first = await UploadAsync(client, team, email.Id, "Q3 report.pdf", _pdf);
+        Assert.Equal(HttpStatusCode.Accepted, first.StatusCode);
+
+        using var response = await UploadAsync(client, team, email.Id, "copy.pdf", _pdf);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(TestContext.Current.CancellationToken);
+        var reloaded = await client.GetFromJsonAsync<EmailDto>($"{EmailsPath(team)}/{email.Id}", ApiJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("Q3 report.pdf", problem!.Detail, StringComparison.Ordinal);
+        Assert.Equal("Q3 report.pdf", Assert.Single(reloaded!.Attachments).FileName);
+    }
+
+    [Fact]
     public async Task UploadAttachment_MemberOfAnotherTeam_ReturnsNotFound()
     {
         var team = await TestCallers.SeedTeamAsync(_fixture);

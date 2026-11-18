@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 using Andes.Mailer.Service.Options;
 
 using Microsoft.Extensions.Options;
@@ -47,6 +49,19 @@ public sealed class AttachmentStagingArea(IOptions<AttachmentUploadOptions> opti
         var read = await file.ReadAtLeastAsync(buffer, count, throwOnEndOfStream: false, cancellationToken);
 
         return buffer[..read];
+    }
+
+    /// <summary>
+    /// Computes the SHA-256 of a staged file.
+    /// </summary>
+    /// <param name="attachmentId">The id of the attachment the file belongs to.</param>
+    /// <param name="cancellationToken">A token that cancels the read.</param>
+    /// <returns>The hash.</returns>
+    public async Task<byte[]> ComputeHashAsync(Guid attachmentId, CancellationToken cancellationToken)
+    {
+        await using var file = OpenRead(attachmentId);
+
+        return await SHA256.HashDataAsync(file, cancellationToken);
     }
 
     /// <summary>

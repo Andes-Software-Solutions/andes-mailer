@@ -204,6 +204,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<byte[]>("ContentHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .IsFixedLength();
+
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(127)
@@ -437,6 +442,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("ContentHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .IsFixedLength();
 
                     b.Property<string>("ContentType")
                         .IsRequired()

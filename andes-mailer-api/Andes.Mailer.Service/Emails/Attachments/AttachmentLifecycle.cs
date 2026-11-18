@@ -64,9 +64,14 @@ public sealed partial class AttachmentLifecycle(
     /// <param name="content">The file.</param>
     /// <param name="create">Builds the row from the checked file; it must keep <see cref="StagedFile.Id"/> as the row's id.</param>
     /// <param name="usedBytes">Sums the bytes the owner's attachments already hold.</param>
+    /// <param name="findDuplicate">
+    /// Finds an attachment of the owner that holds the document with the given SHA-256 and has not failed, and returns its file name,
+    /// or <see langword="null"/> when there is none.
+    /// </param>
     /// <param name="cancellationToken">A token that cancels the operation.</param>
     /// <returns>The saved attachment.</returns>
     /// <exception cref="ValidationException">The file is empty, too large, of a type that is not accepted, or not what its extension says.</exception>
+    /// <exception cref="ConflictException">The owner already has the same document attached.</exception>
     public async Task<TAttachment> StageAsync<TAttachment>(
         AndesMailerDbContext ctx,
         AttachmentOwners owner,
@@ -76,6 +81,7 @@ public sealed partial class AttachmentLifecycle(
         Stream content,
         Func<StagedFile, TAttachment> create,
         Func<CancellationToken, Task<long>> usedBytes,
+        Func<byte[], CancellationToken, Task<string?>> findDuplicate,
         CancellationToken cancellationToken)
         where TAttachment : class, IStagedAttachment
     {
@@ -84,6 +90,7 @@ public sealed partial class AttachmentLifecycle(
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(create);
         ArgumentNullException.ThrowIfNull(usedBytes);
+        ArgumentNullException.ThrowIfNull(findDuplicate);
 
         var name = NormalizeFileName(fileName);
         var type = DocumentTypeDetector.FromFileName(name);
@@ -113,9 +120,17 @@ public sealed partial class AttachmentLifecycle(
                 ThrowIfInvalid(["The file's content does not match its extension."]);
             }
 
-            // The sum and the insert under one lock per owner, so parallel uploads cannot each pass the cap against the same total.
+            attachment.ContentHash = await _staging.ComputeHashAsync(id, cancellationToken);
+
+            // The checks and the insert under one lock per owner, so parallel uploads cannot each pass the cap against the same total,
+            // nor each find the other's copy of the same document missing.
             using (await _quotaLock.AcquireAsync(ownerId, cancellationToken))
             {
+                if (await findDuplicate(attachment.ContentHash, cancellationToken) is { } existing)
+                {
+                    throw new ConflictException($"This document is already attached to the {NounOf(owner)} as {existing}.");
+                }
+
                 ThrowIfInvalid(ValidateTotal(owner, await usedBytes(cancellationToken), written));
                 ctx.Add(attachment);
                 await ctx.SaveChangesAsync(cancellationToken);
@@ -235,14 +250,12 @@ public sealed partial class AttachmentLifecycle(
     }
 
     // One cap for both owners: a template within it always fits the email made from it.
-    private List<string> ValidateTotal(AttachmentOwners owner, long used, long length)
-    {
-        var noun = owner == AttachmentOwners.Template ? "template" : "email";
-
-        return used + length > _options.MaxEmailBytes
-            ? [$"The {noun}'s attachments must total at most {ToMegabytes(_options.MaxEmailBytes)} MB; {ToMegabytes(used)} MB is already attached."]
+    private List<string> ValidateTotal(AttachmentOwners owner, long used, long length) =>
+        used + length > _options.MaxEmailBytes
+            ? [$"The {NounOf(owner)}'s attachments must total at most {ToMegabytes(_options.MaxEmailBytes)} MB; {ToMegabytes(used)} MB is already attached."]
             : [];
-    }
+
+    private static string NounOf(AttachmentOwners owner) => owner == AttachmentOwners.Template ? "template" : "email";
 
     // Browsers on Windows have sent the full client path; only the last segment is the name.
     private static string NormalizeFileName(string fileName) =>

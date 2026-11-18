@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Emails;
 using Andes.Mailer.Entity.Emails.Templates;
@@ -60,6 +62,55 @@ public sealed class TemplateAttachmentServiceTests : IDisposable
         await using var readCtx = _fixture.CreateContext();
         var row = await readCtx.EmailTemplateAttachments.SingleAsync(a => a.Id == attachment.Id, TestContext.Current.CancellationToken);
         Assert.Equal($"templates/{templateId:N}/{attachment.Id:N}", row.BlobName);
+        Assert.Equal(SHA256.HashData(TestFiles.Pdf), row.ContentHash);
+    }
+
+    [Fact]
+    public async Task StageAsync_SameDocumentUnderAnotherName_ThrowsConflictNamingTheFirstAndStagesNothing()
+    {
+        var (teamId, templateId) = await AddTemplateAsync(NewAttachment(AttachmentStatuses.Uploaded, contentHash: SHA256.HashData(TestFiles.Pdf)));
+        await using var ctx = _fixture.CreateContext();
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() => StageAsync(ctx, teamId, templateId, "copy.pdf", TestFiles.Pdf));
+
+        Assert.Contains("template as stored.pdf", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(_staging.ListStagedBefore(DateTimeOffset.MaxValue));
+    }
+
+    [Fact]
+    public async Task StageAsync_SameDocumentAsAFailedAttachment_Accepts()
+    {
+        var (teamId, templateId) = await AddTemplateAsync(NewAttachment(AttachmentStatuses.Failed, contentHash: SHA256.HashData(TestFiles.Pdf)));
+        await using var ctx = _fixture.CreateContext();
+
+        var attachment = await StageAsync(ctx, teamId, templateId, "report.pdf", TestFiles.Pdf);
+
+        Assert.Equal(AttachmentStatuses.Pending, attachment.Status);
+    }
+
+    [Fact]
+    public async Task StageAsync_SameDocumentAfterItWasRemoved_Accepts()
+    {
+        var (teamId, templateId) = await AddTemplateAsync();
+        await using var ctx = _fixture.CreateContext();
+        var first = await StageAsync(ctx, teamId, templateId, "report.pdf", TestFiles.Pdf);
+        await CreateService(ctx).DeleteAsync(teamId, templateId, first.Id, TestContext.Current.CancellationToken);
+
+        var second = await StageAsync(ctx, teamId, templateId, "report.pdf", TestFiles.Pdf);
+
+        Assert.Equal(AttachmentStatuses.Pending, second.Status);
+    }
+
+    [Fact]
+    public async Task StageAsync_SameDocumentOnAnotherTemplate_Accepts()
+    {
+        await AddTemplateAsync(NewAttachment(AttachmentStatuses.Uploaded, contentHash: SHA256.HashData(TestFiles.Pdf)));
+        var (teamId, templateId) = await AddTemplateAsync();
+        await using var ctx = _fixture.CreateContext();
+
+        var attachment = await StageAsync(ctx, teamId, templateId, "report.pdf", TestFiles.Pdf);
+
+        Assert.Equal(AttachmentStatuses.Pending, attachment.Status);
     }
 
     [Fact]
@@ -136,7 +187,7 @@ public sealed class TemplateAttachmentServiceTests : IDisposable
 
     #region Private methods
 
-    private static EmailTemplateAttachment NewAttachment(AttachmentStatuses status, long? sizeBytes = null)
+    private static EmailTemplateAttachment NewAttachment(AttachmentStatuses status, long? sizeBytes = null, byte[]? contentHash = null)
     {
         var id = Guid.CreateVersion7();
 
@@ -149,6 +200,7 @@ public sealed class TemplateAttachmentServiceTests : IDisposable
             SizeBytes = sizeBytes ?? TestFiles.Pdf.Length,
             BlobName = $"templates/{id:N}",
             StatusId = status,
+            ContentHash = contentHash,
         };
     }
 

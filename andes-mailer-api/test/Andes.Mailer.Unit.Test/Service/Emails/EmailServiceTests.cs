@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Actions.Emails;
 using Andes.Mailer.Dto.Emails;
@@ -249,6 +251,7 @@ public sealed class EmailServiceTests : IDisposable
         await using var readCtx = _fixture.CreateContext();
         var row = await readCtx.EmailAttachments.SingleAsync(a => a.EmailId == email.Id, TestContext.Current.CancellationToken);
         Assert.Equal($"{email.Id:N}/{copy.Id:N}", row.BlobName);
+        Assert.Equal(stored.ContentHash, row.ContentHash);
         await _store.Received(1).CopyAsync(stored.BlobName, row.BlobName, Arg.Any<CancellationToken>());
         await _store.DidNotReceive().CopyAsync(failed.BlobName, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -464,6 +467,7 @@ public sealed class EmailServiceTests : IDisposable
         await using var readCtx = _fixture.CreateContext();
         var row = await readCtx.EmailAttachments.SingleAsync(a => a.EmailId == copy.Id, TestContext.Current.CancellationToken);
         Assert.Equal($"{copy.Id:N}/{attachment.Id:N}", row.BlobName);
+        Assert.Equal(stored.ContentHash, row.ContentHash);
         await _store.Received(1).CopyAsync(stored.BlobName, row.BlobName, Arg.Any<CancellationToken>());
         await _store.DidNotReceive().CopyAsync(failed.BlobName, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -588,6 +592,7 @@ public sealed class EmailServiceTests : IDisposable
             SizeBytes = TestFiles.Pdf.Length,
             BlobName = $"templates/{id:N}",
             StatusId = status,
+            ContentHash = SHA256.HashData(TestFiles.Pdf),
         };
     }
 
@@ -604,6 +609,7 @@ public sealed class EmailServiceTests : IDisposable
             SizeBytes = TestFiles.Pdf.Length,
             BlobName = $"emails/{id:N}",
             StatusId = status,
+            ContentHash = SHA256.HashData(TestFiles.Pdf),
         };
     }
 

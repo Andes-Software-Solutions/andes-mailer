@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Emails;
 using Andes.Mailer.Entity.Emails;
@@ -66,6 +68,71 @@ public sealed class AttachmentServiceTests : IDisposable
         await using var readCtx = _fixture.CreateContext();
         var row = await readCtx.EmailAttachments.SingleAsync(a => a.Id == attachment.Id, TestContext.Current.CancellationToken);
         Assert.Equal($"{emailId:N}/{attachment.Id:N}", row.BlobName);
+        Assert.Equal(SHA256.HashData(TestFiles.Pdf), row.ContentHash);
+    }
+
+    [Fact]
+    public async Task StageAsync_SameDocumentUnderAnotherName_ThrowsConflictNamingTheFirstAndStagesNothingMore()
+    {
+        var (teamId, emailId) = await AddDraftAsync();
+        await using var ctx = _fixture.CreateContext();
+        var first = await StageAsync(ctx, teamId, emailId, "report.pdf", TestFiles.Pdf);
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() => StageAsync(ctx, teamId, emailId, "copy.pdf", TestFiles.Pdf));
+
+        Assert.Contains("email as report.pdf", exception.Message, StringComparison.Ordinal);
+        Assert.Equal([first.Id], _staging.ListStagedBefore(DateTimeOffset.MaxValue));
+        await using var readCtx = _fixture.CreateContext();
+        Assert.Equal(1, await readCtx.EmailAttachments.CountAsync(a => a.EmailId == emailId, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task StageAsync_DifferentDocumentWithTheSameName_Accepts()
+    {
+        var (teamId, emailId) = await AddDraftAsync();
+        await using var ctx = _fixture.CreateContext();
+        await StageAsync(ctx, teamId, emailId, "report.pdf", TestFiles.Pdf);
+
+        var second = await StageAsync(ctx, teamId, emailId, "report.pdf", [.. TestFiles.Pdf, 0x0A]);
+
+        Assert.Equal(AttachmentStatuses.Pending, second.Status);
+    }
+
+    [Fact]
+    public async Task StageAsync_SameDocumentAsAFailedAttachment_Accepts()
+    {
+        var (teamId, emailId) = await AddDraftAsync(Attachment(TestFiles.Pdf.Length, AttachmentStatuses.Failed, SHA256.HashData(TestFiles.Pdf)));
+        await using var ctx = _fixture.CreateContext();
+
+        var attachment = await StageAsync(ctx, teamId, emailId, "report.pdf", TestFiles.Pdf);
+
+        Assert.Equal(AttachmentStatuses.Pending, attachment.Status);
+    }
+
+    [Fact]
+    public async Task StageAsync_SameDocumentAfterItWasRemoved_Accepts()
+    {
+        var (teamId, emailId) = await AddDraftAsync();
+        await using var ctx = _fixture.CreateContext();
+        var first = await StageAsync(ctx, teamId, emailId, "report.pdf", TestFiles.Pdf);
+        await CreateService(ctx).DeleteAsync(teamId, emailId, first.Id, TestContext.Current.CancellationToken);
+
+        var second = await StageAsync(ctx, teamId, emailId, "report.pdf", TestFiles.Pdf);
+
+        Assert.Equal(AttachmentStatuses.Pending, second.Status);
+    }
+
+    [Fact]
+    public async Task StageAsync_SameDocumentOnAnotherEmail_Accepts()
+    {
+        var (teamId, emailId) = await AddDraftAsync();
+        var (otherTeamId, otherEmailId) = await AddDraftAsync();
+        await using var ctx = _fixture.CreateContext();
+        await StageAsync(ctx, teamId, emailId, "report.pdf", TestFiles.Pdf);
+
+        var second = await StageAsync(ctx, otherTeamId, otherEmailId, "report.pdf", TestFiles.Pdf);
+
+        Assert.Equal(AttachmentStatuses.Pending, second.Status);
     }
 
     [Theory]
@@ -208,14 +275,15 @@ public sealed class AttachmentServiceTests : IDisposable
     public async Task StageAsync_ParallelUploadsOverEmailCap_AcceptsOnlyThoseThatFit()
     {
         var (teamId, emailId) = await AddDraftAsync();
-        byte[] content = [.. TestFiles.Pdf, .. new byte[MaxFileBytes - TestFiles.Pdf.Length]];
+        var padding = MaxFileBytes - TestFiles.Pdf.Length - 1;
 
         var results = await Task.WhenAll(Enumerable.Range(0, 4).Select(async i =>
         {
             await using var ctx = _fixture.CreateContext();
             try
             {
-                await StageAsync(ctx, teamId, emailId, $"part{i}.pdf", content);
+                // A distinct last byte per part, so the duplicate check never refuses one before the cap is tested.
+                await StageAsync(ctx, teamId, emailId, $"part{i}.pdf", [.. TestFiles.Pdf, .. new byte[padding], (byte)i]);
                 return true;
             }
             catch (ValidationException)
@@ -227,6 +295,30 @@ public sealed class AttachmentServiceTests : IDisposable
         Assert.Single(results, accepted => accepted);
         await using var readCtx = _fixture.CreateContext();
         Assert.Equal(MaxFileBytes, await readCtx.EmailAttachments.Where(a => a.EmailId == emailId).SumAsync(a => a.SizeBytes, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task StageAsync_ParallelUploadsOfTheSameDocument_AcceptsOnlyOne()
+    {
+        var (teamId, emailId) = await AddDraftAsync();
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 4).Select(async i =>
+        {
+            await using var ctx = _fixture.CreateContext();
+            try
+            {
+                await StageAsync(ctx, teamId, emailId, $"copy{i}.pdf", TestFiles.Pdf);
+                return true;
+            }
+            catch (ConflictException)
+            {
+                return false;
+            }
+        }));
+
+        Assert.Single(results, accepted => accepted);
+        await using var readCtx = _fixture.CreateContext();
+        Assert.Equal(1, await readCtx.EmailAttachments.CountAsync(a => a.EmailId == emailId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -252,7 +344,7 @@ public sealed class AttachmentServiceTests : IDisposable
 
     #region Private methods
 
-    private static EmailAttachment Attachment(long size, AttachmentStatuses status)
+    private static EmailAttachment Attachment(long size, AttachmentStatuses status, byte[]? contentHash = null)
     {
         var id = Guid.NewGuid();
 
@@ -265,6 +357,7 @@ public sealed class AttachmentServiceTests : IDisposable
             SizeBytes = size,
             BlobName = $"email/{id:N}",
             StatusId = status,
+            ContentHash = contentHash,
         };
     }
 

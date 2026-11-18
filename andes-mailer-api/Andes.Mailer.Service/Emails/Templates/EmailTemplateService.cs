@@ -239,6 +239,7 @@ public sealed class EmailTemplateService(AndesMailerDbContext ctx, IAttachmentSt
                 DocumentTypeId = stored.DocumentTypeId,
                 ContentType = stored.ContentType,
                 SizeBytes = stored.SizeBytes,
+                ContentHash = stored.ContentHash,
                 BlobName = $"templates/{template.Id:N}/{attachmentId:N}",
                 StatusId = AttachmentStatuses.Uploaded,
             };

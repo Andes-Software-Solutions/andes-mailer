@@ -31,6 +31,7 @@ public interface IAttachmentService
     /// <exception cref="NotFoundException">The team has no active email with the id.</exception>
     /// <exception cref="EmailNotEditableException">The email is no longer a draft.</exception>
     /// <exception cref="ValidationException">The file is empty, too large, of a type that is not accepted, or not what its extension says.</exception>
+    /// <exception cref="ConflictException">The email already has the same document attached.</exception>
     Task<EmailAttachmentDto> StageAsync(Guid teamId, Guid emailId, string fileName, long length, Stream content, CancellationToken cancellationToken);
 
     /// <summary>
@@ -118,6 +119,7 @@ public sealed class AttachmentService(AndesMailerDbContext ctx, AttachmentLifecy
                 StatusId = AttachmentStatuses.Pending,
             },
             ct => UsedBytesAsync(emailId, ct),
+            (hash, ct) => DuplicateFileNameAsync(emailId, hash, ct),
             cancellationToken);
 
         return EmailMapper.MapToEmailAttachmentDto(attachment);
@@ -171,6 +173,14 @@ public sealed class AttachmentService(AndesMailerDbContext ctx, AttachmentLifecy
         _ctx.EmailAttachments
             .Where(a => a.EmailId == emailId && a.StatusId != AttachmentStatuses.Failed)
             .SumAsync(a => a.SizeBytes, cancellationToken);
+
+    // The same attachments the total counts: a failed upload holds nothing, so the document may be sent again.
+    private Task<string?> DuplicateFileNameAsync(Guid emailId, byte[] hash, CancellationToken cancellationToken) =>
+        _ctx.EmailAttachments
+            .AsNoTracking()
+            .Where(a => a.EmailId == emailId && a.StatusId != AttachmentStatuses.Failed && a.ContentHash == hash)
+            .Select(a => a.FileName)
+            .FirstOrDefaultAsync(cancellationToken);
 
     #endregion
 }

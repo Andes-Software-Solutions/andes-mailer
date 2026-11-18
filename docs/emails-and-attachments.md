@@ -26,7 +26,7 @@ These are not built, and the API makes no provision for them:
 
 ## Data model
 
-Application tables live in `Core`; fixed lookup data lives in `Core.Ref`. All of them arrive in the migration `Andes.Mailer.Repository/Sql/Migrations/*_AddEmailsAndAttachments.cs`. The later migration `*_AddTeams.cs` gives each email a team and an author, and **deletes every email that existed before it**; see [Upgrading](teams.md#upgrading-the-addteams-migration). The migration `*_AddEmailTemplates.cs` adds `TemplateId` to the email and the template tables described in [Email templates](email-templates.md#data-model); it deletes nothing.
+Application tables live in `Core`; fixed lookup data lives in `Core.Ref`. All of them arrive in the migration `Andes.Mailer.Repository/Sql/Migrations/*_AddEmailsAndAttachments.cs`. The later migration `*_AddTeams.cs` gives each email a team and an author, and **deletes every email that existed before it**; see [Upgrading](teams.md#upgrading-the-addteams-migration). The migration `*_AddEmailTemplates.cs` adds `TemplateId` to the email and the template tables described in [Email templates](email-templates.md#data-model); it deletes nothing. The migration `*_AddAttachmentContentHash.cs` adds the nullable `ContentHash` column to `[Core].[EmailAttachment]` and `[Core].[EmailTemplateAttachment]`; it deletes nothing either, and it has no backfill (see [Duplicate documents](#duplicate-documents)).
 
 | Table | Holds |
 | --- | --- |
@@ -77,6 +77,7 @@ A recipient has no soft delete. When you save a draft without an address it had 
 | `SizeBytes` | The bytes that reached the server's disk, not the size the request declared. |
 | `BlobName` | `{emailId:N}/{attachmentId:N}`: both ids as 32 hex digits, so a draft's documents share a prefix. A template's documents live in the same container under `templates/{templateId:N}/{attachmentId:N}`, so the two kinds of name never collide. A draft made from a template, or by duplicating another email, gets its own copy of each document under this pattern. |
 | `StatusId`, `FailureReason` | Where the upload stands. A failure carries a short message to show the user. |
+| `ContentHash` | The SHA-256 of the document, `binary(32)` and nullable. An upload compares it to the email's other attachments to refuse a document that is already attached; see [Duplicate documents](#duplicate-documents). Null on rows saved before the column existed, and never exposed in the [attachment object](#the-attachment-object). A document copied into a new draft keeps its hash. |
 | `DateCreated`, `DateModified`, `DateDeactivated`, `Version` | Removing an attachment soft-deletes it. |
 
 ## Endpoints
@@ -178,7 +179,7 @@ The route needs only `ComposeTeamEmails`, so any member of the team can use it, 
 
 - The subject and body are copied as stored; they were sanitized when the template was saved.
 - The recipients are copied and **re-resolved through the directory**, so `userId` and `displayName` are current. See [Recipient resolution](#recipient-resolution).
-- Each `Uploaded` template attachment is copied inside Blob Storage to a new attachment row with status `Uploaded` and the blob name `{emailId:N}/{attachmentId:N}`. `Failed` attachments are skipped. The copies are ready at once, so there is nothing to poll.
+- Each `Uploaded` template attachment is copied inside Blob Storage to a new attachment row with status `Uploaded`, the blob name `{emailId:N}/{attachmentId:N}`, and the template attachment's `ContentHash`. `Failed` attachments are skipped. The copies are ready at once, so there is nothing to poll.
 - If any template attachment is `Pending` or `Uploading`, the call is a 409 and nothing is created. If a template document is missing from storage, it is a 404 and nothing is saved; the copies already made are deleted.
 
 From then on the draft is ordinary: update, delete, and attach documents through the endpoints on this page. The full rules, failure handling, and the template endpoints are in [Email templates](email-templates.md#start-an-email-from-a-template).
@@ -202,7 +203,7 @@ What the new draft gets:
 | `templateId` | Kept from the source, so a copy of a draft made from a template still names that template. It is `null` when the source has none. |
 | Subject and body | Copied as stored. They were sanitized when the source was saved. |
 | Recipients | Copied with the same header and order, **as stored**, including the resolved `userId` and `displayName`. The API makes no new directory lookup, unlike [from-template](#start-an-email-from-a-template), so a name does not refresh; see [Recipient resolution](#recipient-resolution). |
-| Attachments | Each `Uploaded` attachment is copied inside Blob Storage to a new attachment row with status `Uploaded` and the blob name `{emailId:N}/{attachmentId:N}`. `Failed` attachments are left out, because they hold no document. The copies are ready at once, so there is nothing to poll. |
+| Attachments | Each `Uploaded` attachment is copied inside Blob Storage to a new attachment row with status `Uploaded`, the blob name `{emailId:N}/{attachmentId:N}`, and the source's `ContentHash`, so a later upload to the copy is checked against these documents too. `Failed` attachments are left out, because they hold no document. The copies are ready at once, so there is nothing to poll. |
 
 The copy is independent: editing it, removing its attachments, or deleting it never touches the source, and the reverse holds too.
 
@@ -252,12 +253,12 @@ Documents go in as attachments, under `/api/teams/{teamId}/emails/{emailId}/atta
 
 | Method and route | Permission in the team | Success | Other statuses |
 | --- | --- | --- | --- |
-| `POST /api/teams/{teamId}/emails/{emailId}/attachments` | `ComposeTeamEmails` and `CanAttachDocuments` | 202 with the attachment and a `Location` of the new attachment | 400, 403, 404, 409 |
+| `POST /api/teams/{teamId}/emails/{emailId}/attachments` | `ComposeTeamEmails` and `CanAttachDocuments` | 202 with the attachment and a `Location` of the new attachment | 400; 403; 404; 409 if the email is no longer a draft or already has the same document attached |
 | `GET /api/teams/{teamId}/emails/{emailId}/attachments/{id}` | `ComposeTeamEmails` | 200 with the attachment | 403, 404 |
 | `GET /api/teams/{teamId}/emails/{emailId}/attachments/{id}/content` | `ComposeTeamEmails` | 200 with the file | 403; 404; 409 until the status is `Uploaded` |
 | `DELETE /api/teams/{teamId}/emails/{emailId}/attachments/{id}` | `ComposeTeamEmails` and `CanAttachDocuments` | 204 | 403, 404, 409 |
 
-The team check from [Endpoints](#endpoints) runs first. `POST` and `DELETE` then fail with 403 when the caller lacks `CanAttachDocuments` in the team (see [Users and permissions](users-and-permissions.md#roles-and-permissions)); both team roles hold it. They return 409 when the email is no longer a draft. A 404 means the team, the email, or the attachment is not the caller's to see or does not exist. Any member of the team can upload to, download from, and remove attachments from any of its drafts.
+The team check from [Endpoints](#endpoints) runs first. `POST` and `DELETE` then fail with 403 when the caller lacks `CanAttachDocuments` in the team (see [Users and permissions](users-and-permissions.md#roles-and-permissions)); both team roles hold it. They return 409 when the email is no longer a draft, and `POST` also returns 409 when the email already has the same document; see [Duplicate documents](#duplicate-documents). A 404 means the team, the email, or the attachment is not the caller's to see or does not exist. Any member of the team can upload to, download from, and remove attachments from any of its drafts.
 
 ### The attachment object
 
@@ -311,6 +312,31 @@ A failed check returns a 400 validation problem with the errors under the `file`
 The content check reads the first 12 bytes against each type's signature: `%PDF-` for PDF; `PK` and the ZIP header for `.docx` and `.pptx`; the PNG, JPEG, and GIF signatures; and `RIFF....WEBP` for WebP. The Office formats are ZIP packages, so the signature cannot tell a `.docx` from a `.pptx`; the extension does. This is a guard against honest mistakes and renamed files, not against a crafted file. See [Known limitations](#known-limitations).
 
 Parallel uploads to one draft cannot each pass the 25 MB cap: the size sum and the insert run under a lock per email. Kestrel's default request limit of 30,000,000 bytes sits just above the file cap, so no endpoint-specific limit is set.
+
+### Duplicate documents
+
+Attaching the same file twice wastes the 25 MB cap and sends the recipient two copies. The API refuses it, whatever the file is called, because people rename files all the time.
+
+After the checks above pass, the API computes the SHA-256 of the staged bytes and looks for an attachment of the same email with the same hash. If it finds one, the request is a 409 Problem Details response whose `detail` names the file already attached:
+
+```json
+{
+  "status": 409,
+  "detail": "This document is already attached to the email as Q3 report.pdf."
+}
+```
+
+For a template, the sentence ends "to the template as ...". The staged copy is deleted and no row is saved, so there is nothing to clean up and nothing to poll.
+
+| Question | Answer |
+| --- | --- |
+| What makes two documents the same? | The same bytes. Only the SHA-256 is compared, not the file name or the extension. |
+| Two different files with the same name? | Both are accepted. |
+| The same document on another email or template? | Accepted. The check covers one email (or one template) at a time. |
+| Which attachments block an upload? | `Pending`, `Uploading`, and `Uploaded` ones, the same set that counts toward the [25 MB cap](#validation). A `Failed` or removed attachment does not, so you can upload the document again. |
+| What about attachments from before this check? | `ContentHash` is null on rows saved before the migration `AddAttachmentContentHash`, and there is no backfill, so those documents are never matched. |
+
+The duplicate check and the size check run together under the same per-email lock, so two parallel uploads of one document cannot both succeed. The hash is computed from the staged file on disk, so a large upload is read once more after it is written. The check is not a security control: a one-byte change makes a different document.
 
 ### The background pipeline
 

@@ -57,10 +57,11 @@ internal static class EmailTemplateAttachmentEndpoints
             .Accepts<IFormFile>("multipart/form-data")
             .WithName(nameof(UploadTemplateAttachment))
             .WithSummary("Receives a document for an email template and uploads it to storage in the background.")
-            .WithDescription("Returns 202 with the attachment in status Pending. Poll the Location until the status is Uploaded or Failed.")
+            .WithDescription("Returns 202 with the attachment in status Pending. Poll the Location until the status is Uploaded or Failed. Returns 409 when the template already has the same document attached, whatever its file name.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapGet("/{id:guid}", GetTemplateAttachment)
             .WithName(nameof(GetTemplateAttachment))
