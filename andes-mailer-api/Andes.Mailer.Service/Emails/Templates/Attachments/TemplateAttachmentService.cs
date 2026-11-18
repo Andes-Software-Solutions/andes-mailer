@@ -30,6 +30,7 @@ public interface ITemplateAttachmentService
     /// <returns>The attachment, with status <see cref="AttachmentStatuses.Pending"/>.</returns>
     /// <exception cref="NotFoundException">The team has no active template with the id.</exception>
     /// <exception cref="ValidationException">The file is empty, too large, of a type that is not accepted, or not what its extension says.</exception>
+    /// <exception cref="ConflictException">The template already has the same document attached.</exception>
     Task<EmailAttachmentDto> StageAsync(Guid teamId, Guid templateId, string fileName, long length, Stream content, CancellationToken cancellationToken);
 
     /// <summary>
@@ -113,6 +114,7 @@ public sealed class TemplateAttachmentService(AndesMailerDbContext ctx, Attachme
                 StatusId = AttachmentStatuses.Pending,
             },
             ct => UsedBytesAsync(templateId, ct),
+            (hash, ct) => FindDuplicateDocumentAsync(templateId, hash, ct),
             cancellationToken);
 
         return EmailTemplateMapper.MapToAttachmentDto(attachment);
@@ -162,6 +164,14 @@ public sealed class TemplateAttachmentService(AndesMailerDbContext ctx, Attachme
         _ctx.EmailTemplateAttachments
             .Where(a => a.TemplateId == templateId && a.StatusId != AttachmentStatuses.Failed)
             .SumAsync(a => a.SizeBytes, cancellationToken);
+
+    // The same attachments the total counts: a failed upload holds nothing, so the document may be sent again.
+    private Task<string?> FindDuplicateDocumentAsync(Guid templateId, byte[] hash, CancellationToken cancellationToken) =>
+        _ctx.EmailTemplateAttachments
+            .AsNoTracking()
+            .Where(a => a.TemplateId == templateId && a.StatusId != AttachmentStatuses.Failed && a.ContentHash == hash)
+            .Select(a => a.FileName)
+            .FirstOrDefaultAsync(cancellationToken);
 
     #endregion
 }

@@ -68,4 +68,10 @@ public sealed class EmailTemplateAttachment : BaseModifiedEntity<Guid>, IStagedA
     /// </summary>
     /// <value>A message safe to show the team, or <see langword="null"/> unless <see cref="StatusId"/> is <see cref="AttachmentStatuses.Failed"/>.</value>
     public string? FailureReason { get; set; }
+
+    /// <summary>
+    /// Gets or sets the SHA-256 of the document, which tells an upload whether the same document is already attached.
+    /// </summary>
+    /// <value>The <see cref="Common.Constants.Emails.EmailAttachmentLimits.ContentHashLength"/>-byte hash, or <see langword="null"/> on rows saved before hashes were recorded.</value>
+    public byte[]? ContentHash { get; set; }
 }

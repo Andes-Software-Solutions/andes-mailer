@@ -200,7 +200,7 @@ What the new template gets:
 | Author | The caller is the `authorId`. |
 | Subject and body | Copied as stored. |
 | Recipients | Copied with the same header and order. A template keeps addresses only, so there is nothing to resolve and no Graph call. |
-| Attachments | Each `Uploaded` attachment is copied inside storage to a new attachment row with status `Uploaded` and the blob name `templates/{templateId:N}/{attachmentId:N}`. `Failed` attachments are left out. The copies are ready at once, so there is nothing to poll. |
+| Attachments | Each `Uploaded` attachment is copied inside storage to a new attachment row with status `Uploaded`, the blob name `templates/{templateId:N}/{attachmentId:N}`, and the source's `ContentHash`, so later uploads to the copy are checked against these documents. `Failed` attachments are left out. The copies are ready at once, so there is nothing to poll. |
 
 The copy is independent: later changes to either template never reach the other, and removing a document from one never deletes the other's.
 
@@ -222,12 +222,14 @@ Documents go in under `/api/teams/{teamId}/templates/{templateId}/attachments`. 
 
 | Method and route | Permission (besides `ComposeTeamEmails`) | Success | Other statuses |
 | --- | --- | --- | --- |
-| `POST /api/teams/{teamId}/templates/{templateId}/attachments` | `ManageTeamTemplates` and `CanAttachDocuments` | 202 with the attachment and a `Location` of the new attachment | 400; 403; 404 |
+| `POST /api/teams/{teamId}/templates/{templateId}/attachments` | `ManageTeamTemplates` and `CanAttachDocuments` | 202 with the attachment and a `Location` of the new attachment | 400; 403; 404; 409 if the template already has the same document attached |
 | `GET /api/teams/{teamId}/templates/{templateId}/attachments/{id}` | None | 200 with the attachment | 403; 404 |
 | `GET /api/teams/{teamId}/templates/{templateId}/attachments/{id}/content` | None | 200 with the file | 403; 404; 409 until the status is `Uploaded` |
 | `DELETE /api/teams/{teamId}/templates/{templateId}/attachments/{id}` | `ManageTeamTemplates` and `CanAttachDocuments` | 204 | 403; 404 |
 
 The upload flow is the one in [Upload flow](emails-and-attachments.md#upload-flow): send the file as `multipart/form-data` in a field named `file`, read the 202, then poll the attachment until `status` is `Uploaded` or `Failed`. A `Failed` attachment carries a `failureReason`; remove it and upload the file again.
+
+A template refuses a document it already holds, whatever the file is called. The upload is a 409 with "This document is already attached to the template as Q3 report.pdf." and nothing is staged or saved. The comparison is the SHA-256 of the bytes against the template's `Pending`, `Uploading`, and `Uploaded` attachments; `Failed` and removed ones do not block, two different files with the same name are both accepted, and the same document on another template or email is accepted. Rows saved before the migration `AddAttachmentContentHash` have no hash and are never matched. See [Duplicate documents](emails-and-attachments.md#duplicate-documents).
 
 Removing a template attachment deletes its document from storage, but **never touches emails already made from the template**: each of those holds its own copy of the document under its own blob name.
 
@@ -254,7 +256,7 @@ What the new draft gets:
 | `templateId` | Set to the template's id. |
 | Subject and body | Copied as stored. They were sanitized and trimmed when the template was saved. |
 | Recipients | Copied, with the same header and order. The API **re-resolves each address through Microsoft Graph**, so `userId` and `displayName` reflect the directory today, as for any new draft. See [Recipient resolution](emails-and-attachments.md#recipient-resolution). |
-| Attachments | Each `Uploaded` template attachment is copied to a new attachment row with status `Uploaded` and the blob name `{emailId:N}/{attachmentId:N}`. The document is copied inside storage, not through the API. |
+| Attachments | Each `Uploaded` template attachment is copied to a new attachment row with status `Uploaded`, the blob name `{emailId:N}/{attachmentId:N}`, and the template attachment's `ContentHash`, so later uploads to the draft are checked against these documents. The document is copied inside storage, not through the API. |
 
 `Failed` attachments are skipped, because they hold no document. The client has no extra work to do afterwards: the copies are already `Uploaded`, so there is nothing to poll.
 
@@ -321,6 +323,10 @@ The migration only adds. It deletes no data and removes no grants.
 
 Apply it with the command above. No data needs moving. The new permission takes effect on the next request of every `TeamAdministrator`; there is nothing to refresh in the token. `Down` drops the three tables, the column, and the permission with its grants, so it deletes any templates made since.
 
+## Upgrading: the `AddAttachmentContentHash` migration
+
+The migration only adds. It puts the nullable column `ContentHash binary(32)` on `[Core].[EmailTemplateAttachment]` and on `[Core].[EmailAttachment]` and deletes no data. It does not backfill, so documents attached before it are not compared with new uploads; remove and upload one again if it must be protected. `Down` drops both columns. Apply it with the command above.
+
 ## Examples
 
 ### Set up and use a template
@@ -336,6 +342,7 @@ Apply it with the command above. No data needs moving. The new permission takes 
 | --- | --- | --- |
 | 404 on a template route | The team or template does not exist, is deactivated, or you are not in the team. | Treat it as "no such template". |
 | 403 on a template write | You are in the team, but your role lacks `ManageTeamTemplates` (or `CanAttachDocuments`). | Hide the edit actions for a `TeamMember`. |
+| 409 on a template attachment `POST` | The template already holds the same document; the message names the file. | Show the message; the document is already there, so there is nothing to retry. |
 | 409 on `POST` or `PUT` | The name is taken, or the `version` is stale. | Read the template again; if the message names the name, ask for another. |
 | 409 on `from-template` | A template attachment is still uploading. | Say so, and offer to retry shortly. |
 | 409 on `duplicate` | The name you gave is taken, or an attachment is still uploading. | Read the message; ask for another name, or retry shortly. |

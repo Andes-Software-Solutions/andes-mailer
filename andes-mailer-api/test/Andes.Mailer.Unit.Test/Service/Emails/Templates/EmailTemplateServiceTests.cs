@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 using Andes.Mailer.Common.Constants.Emails;
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Actions.Emails;
@@ -323,6 +325,7 @@ public sealed class EmailTemplateServiceTests : IDisposable
         await using var readCtx = _fixture.CreateContext();
         var row = await readCtx.EmailTemplateAttachments.SingleAsync(a => a.TemplateId == copy.Id, TestContext.Current.CancellationToken);
         Assert.Equal($"templates/{copy.Id:N}/{attachment.Id:N}", row.BlobName);
+        Assert.Equal(stored.ContentHash, row.ContentHash);
         await _store.Received(1).CopyAsync(stored.BlobName, row.BlobName, Arg.Any<CancellationToken>());
         await _store.DidNotReceive().CopyAsync(failed.BlobName, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -414,6 +417,7 @@ public sealed class EmailTemplateServiceTests : IDisposable
             SizeBytes = TestFiles.Pdf.Length,
             BlobName = $"templates/{id:N}",
             StatusId = status,
+            ContentHash = SHA256.HashData(TestFiles.Pdf),
         };
     }
 

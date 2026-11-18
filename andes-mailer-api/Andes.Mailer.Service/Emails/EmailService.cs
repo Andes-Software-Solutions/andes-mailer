@@ -380,6 +380,7 @@ public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService
                 DocumentTypeId = documentTypeId,
                 ContentType = stored.ContentType,
                 SizeBytes = stored.SizeBytes,
+                ContentHash = stored.ContentHash,
                 BlobName = $"{email.Id:N}/{id:N}",
                 StatusId = AttachmentStatuses.Uploaded,
             };

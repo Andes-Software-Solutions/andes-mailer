@@ -10,19 +10,7 @@
   "enableAllProjectMcpServers": true,
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
-    "github@claude-plugins-official": true,
-    "andes-core@andes": true,
-    "andes-dotnet@andes": true,
-    "andes-angular@andes": true,
-    "andes-github@andes": true
-  },
-  "extraKnownMarketplaces": {
-    "andes": {
-      "source": {
-        "source": "github",
-        "repo": "Andes-Software-Solutions/awesome-claude-copilot"
-      }
-    }
+    "github@claude-plugins-official": true
   },
   "effortLevel": "high"
 }

@@ -56,7 +56,7 @@ internal static class EmailAttachmentEndpoints
             .Accepts<IFormFile>("multipart/form-data")
             .WithName(nameof(UploadAttachment))
             .WithSummary("Receives a document for a draft and uploads it to storage in the background.")
-            .WithDescription("Returns 202 with the attachment in status Pending. Poll the Location until the status is Uploaded or Failed.")
+            .WithDescription("Returns 202 with the attachment in status Pending. Poll the Location until the status is Uploaded or Failed. Returns 409 when the email is no longer a draft, or already has the same document attached, whatever its file name.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)

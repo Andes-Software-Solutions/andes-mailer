@@ -24,4 +24,9 @@ public static class EmailAttachmentLimits
     /// The maximum length of a failure reason.
     /// </summary>
     public const int FailureReasonMaxLength = 256;
+
+    /// <summary>
+    /// The length of a document's SHA-256 hash, in bytes.
+    /// </summary>
+    public const int ContentHashLength = 32;
 }

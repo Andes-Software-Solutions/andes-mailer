@@ -398,6 +398,23 @@ public sealed class EmailTemplateEndpointsIntegrationTests(SqlServerFixture fixt
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task UploadTemplateAttachment_SameDocumentUnderAnotherName_ReturnsConflictAndKeepsOnlyTheFirst()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var admin = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, admin);
+        var template = await CreateTemplateAsync(client, team);
+        await UploadStoredAsync(client, team, template.Id);
+
+        using var response = await UploadAsync(client, team, template.Id, "copy.pdf", _pdf);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        await using var readCtx = _fixture.CreateContext();
+        Assert.Equal(1, await readCtx.EmailTemplateAttachments.CountAsync(a => a.TemplateId == template.Id, TestContext.Current.CancellationToken));
+    }
+
     #region Private methods
 
     private static async Task<Uri> UploadStoredAsync(HttpClient client, Guid teamId, Guid templateId)

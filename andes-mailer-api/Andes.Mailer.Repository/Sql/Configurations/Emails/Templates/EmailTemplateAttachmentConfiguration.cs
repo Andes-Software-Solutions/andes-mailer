@@ -23,6 +23,7 @@ public sealed class EmailTemplateAttachmentConfiguration : BaseModifiedEntityCon
         builder.Property(a => a.ContentType).HasMaxLength(EmailAttachmentLimits.ContentTypeMaxLength).IsRequired();
         builder.Property(a => a.BlobName).HasMaxLength(EmailAttachmentLimits.BlobNameMaxLength).IsRequired();
         builder.Property(a => a.FailureReason).HasMaxLength(EmailAttachmentLimits.FailureReasonMaxLength);
+        builder.Property(a => a.ContentHash).HasMaxLength(EmailAttachmentLimits.ContentHashLength).IsFixedLength();
         builder.HasOne(a => a.DocumentType)
             .WithMany()
             .HasForeignKey(a => a.DocumentTypeId)
