@@ -11,6 +11,7 @@ using Andes.Mailer.Service.Users;
 using Andes.Mailer.Service.Users.Models;
 
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 using NSubstitute;
@@ -22,6 +23,7 @@ public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture, Azur
     private const string ProblemJson = "application/problem+json";
     private const string UsersPath = "/api/users";
     private const string MePath = "/api/users/me";
+    private const string DirectoryPath = "/api/users/directory";
     private const string UnknownPath = "/unknown";
 
     private readonly SqlServerFixture _fixture = fixture;
@@ -230,6 +232,107 @@ public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture, Azur
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal(ProblemJson, response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task SearchDirectory_Query_ReturnsMatches()
+    {
+        var caller = await TestCallers.SeedAsync(_fixture);
+        var person = new DirectoryUser(Guid.NewGuid(), "Ana", "Rojas", "ana.rojas@contoso.com");
+        _directory.SearchAsync("ana roj", 5, Arg.Any<CancellationToken>()).Returns([person]);
+        await using var factory = CreateFactory();
+        using var client = CreateClient(factory, caller);
+
+        var found = await client.GetFromJsonAsync<DirectoryUserDto[]>($"{DirectoryPath}?query={Uri.EscapeDataString(" ana roj ")}&limit=5", ApiJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.Equal([new DirectoryUserDto(person.Id, "Ana", "Rojas", "Ana Rojas", "ana.rojas@contoso.com")], found!);
+    }
+
+    [Fact]
+    public async Task SearchDirectory_QueryTooShort_ReturnsValidationProblem()
+    {
+        var caller = await TestCallers.SeedAsync(_fixture);
+        await using var factory = CreateFactory();
+        using var client = CreateClient(factory, caller);
+
+        using var response = await client.GetAsync($"{DirectoryPath}?query=a", TestContext.Current.CancellationToken);
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>(TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(nameof(SearchDirectoryActionDto.Query), problem!.Errors.Keys);
+        await _directory.DidNotReceiveWithAnyArgs().SearchAsync(default!, default, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task SearchDirectory_AccountNotAUser_ReturnsForbidden()
+    {
+        await using var factory = CreateFactory();
+        using var client = CreateClient(factory, Guid.NewGuid());
+
+        using var response = await client.GetAsync($"{DirectoryPath}?query=ana", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await _directory.DidNotReceiveWithAnyArgs().SearchAsync(default!, default, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task SearchDirectory_DeactivatedUser_ReturnsForbidden()
+    {
+        var caller = await TestCallers.SeedAsync(_fixture);
+        await using (var ctx = _fixture.CreateContext())
+        {
+            await ctx.Users
+                .Where(u => u.Id == caller)
+                .ExecuteUpdateAsync(u => u.SetProperty(x => x.DateDeactivated, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)), TestContext.Current.CancellationToken);
+        }
+
+        await using var factory = CreateFactory();
+        using var client = CreateClient(factory, caller);
+
+        using var response = await client.GetAsync($"{DirectoryPath}?query=ana", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SearchDirectory_NoToken_ReturnsUnauthorized()
+    {
+        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, _azurite.ConnectionString);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync($"{DirectoryPath}?query=ana", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SearchDirectory_OverRateLimit_ReturnsTooManyRequestsWithRetryAfter()
+    {
+        var caller = await TestCallers.SeedAsync(_fixture);
+        _directory.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+        await using var factory = new AndesMailerApiFactory(
+            _fixture.ConnectionString,
+            _azurite.ConnectionString,
+            useTestAuthentication: true,
+            configuration: new Dictionary<string, string?>
+            {
+                ["RateLimiting:DirectorySearch:TokenLimit"] = "1",
+                ["RateLimiting:DirectorySearch:TokensPerPeriod"] = "1",
+                ["RateLimiting:DirectorySearch:ReplenishmentPeriod"] = "01:00:00",
+            },
+            configureTestServices: services => services.AddScoped(_ => _directory));
+        using var client = CreateClient(factory, caller);
+        using var otherClient = CreateClient(factory, await TestCallers.SeedAsync(_fixture));
+
+        using var first = await client.GetAsync($"{DirectoryPath}?query=ana", TestContext.Current.CancellationToken);
+        using var second = await client.GetAsync($"{DirectoryPath}?query=anan", TestContext.Current.CancellationToken);
+        using var otherCaller = await otherClient.GetAsync($"{DirectoryPath}?query=ana", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
+        Assert.Equal(ProblemJson, second.Content.Headers.ContentType?.MediaType);
+        Assert.NotNull(second.Headers.RetryAfter);
+        Assert.Equal(HttpStatusCode.OK, otherCaller.StatusCode);
     }
 
     #region Private methods

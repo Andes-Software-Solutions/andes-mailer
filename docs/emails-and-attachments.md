@@ -1,13 +1,13 @@
 # Emails and attachments
 
-Andes Mailer will send email on behalf of teams, and a message takes work to prepare: a subject, a formatted body, recipients, and documents. The API stores that work as a **draft** so the team can build it up over several requests, leave, and come back. This page covers the draft data model, the `/api/teams/{teamId}/emails` endpoints, how attachment uploads work end to end, and the configuration and local setup that uploads need. For teams and who may do what in them, see [Teams](teams.md) and [Users and permissions](users-and-permissions.md). For reusable starting points for drafts, see [Email templates](email-templates.md). For how tokens are issued and validated, see [Authentication](authentication.md).
+Andes Mailer will send email on behalf of teams, and a message takes work to prepare: a subject, a formatted body, recipients, and documents. The API stores that work as a **draft** so the team can build it up over several requests, leave, and come back. This page covers the draft data model, the `/api/teams/{teamId}/emails` endpoints, how attachment uploads work end to end, and the configuration and local setup that uploads need. For teams and who may do what in them, see [Teams](teams.md) and [Users and permissions](users-and-permissions.md). For reusable starting points for drafts, see [Email templates](email-templates.md). For named lists of addresses to add as recipients, see [Contact groups](contact-groups.md). For how tokens are issued and validated, see [Authentication](authentication.md).
 
 ## How it fits together
 
 - An **email** is a draft that belongs to a [team](teams.md). Every member of the team can view, edit, attach documents to, and delete any of the team's drafts, whoever started it. To anyone outside the team it does not exist. A global `Administrator` can work in every team's emails.
 - The email records its **author**, the team member who started the draft, so the UI can show who it was. The author gets no special rights.
 - The team's service account is the email's sender. Nothing sends yet, so this matters later; see [Teams](teams.md#how-it-fits-together).
-- A **recipient** is an address under the To, Cc, or Bcc header. The API asks Microsoft Graph who owns each new address, so the UI can later show names for people in your organization. Any other address is kept as plain text.
+- A **recipient** is an address under the To, Cc, or Bcc header. The API asks Microsoft Graph who owns each new address, so the UI can later show names for people in your organization. Any other address is kept as plain text. A team can also keep [contact groups](contact-groups.md) and add a whole group's addresses as recipients; see [Add a contact group's addresses](#add-a-contact-groups-addresses).
 - An **attachment** is a document added to a draft. The request that receives it returns at once; a background job copies the file to Azure Blob Storage, and the client polls for the result. This keeps a slow upload to storage from holding the request open or failing the user's save.
 - A draft can start from a **template**: `POST /api/teams/{teamId}/emails/from-template` copies a [template](email-templates.md)'s subject, body, recipients, and documents into a new draft, and records the template's id as the draft's `templateId`. The copy is independent: later template changes never reach the draft. See [Start an email from a template](#start-an-email-from-a-template).
 - A team member can also **duplicate** an email: `POST /api/teams/{teamId}/emails/{id}/duplicate` copies a draft or a sent email into a new draft, with its own copy of every uploaded document. It needs the `DuplicateTeamEmails` permission. See [Duplicate an email](#duplicate-an-email).
@@ -18,7 +18,7 @@ Andes Mailer will send email on behalf of teams, and a message takes work to pre
 These are not built, and the API makes no provision for them:
 
 - The UI: the TipTap compose screen, the recipient picker, upload progress, and the template screens.
-- A directory typeahead endpoint for the picker.
+- The picker itself. The API side exists: [`GET /api/users/directory`](users-and-permissions.md#search-the-directory) suggests directory accounts as someone types.
 - Sending a draft through Microsoft Graph.
 - Inline images in the body (the sanitizer removes `img`; see [Body sanitization](#body-sanitization)).
 - Running more than one API instance (see [Scaling out](#scaling-out)).
@@ -165,6 +165,10 @@ The rules, for both:
 | `version` (update only) | The base64 row version from the last response, decoding to 8 bytes. |
 
 The update applies only if the row still has the `version` you sent. If anyone changed the email in between, such as a second tab or another member of the team, the API returns 409 and you read the email again before retrying. Without this, two editors would silently overwrite each other. Attachment changes do not touch the email's version, so an upload finishing never causes a conflict. A `Sent` email is also a 409: only a draft can change.
+
+### Add a contact group's addresses
+
+A [contact group](contact-groups.md) is a team's named list of addresses. Adding one to a draft is a client step, not a route: `GET /api/teams/{teamId}/contact-groups/{groupId}`, then put each `members[].address` into `recipients` under the header the user chose, and save the draft as above. The addresses become ordinary recipients, so the 500-address cap and the no-repeated-address rule apply to the draft as a whole, and the save looks each new address up in the directory as usual (see [Recipient resolution](#recipient-resolution)). The draft keeps no link to the group: later changes to the group do not reach it, and deactivating the group leaves the draft alone. A group holds at most 500 addresses, so it always fits in an empty draft.
 
 ### Start an email from a template
 

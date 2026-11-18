@@ -1,5 +1,6 @@
 using System.Security.Claims;
 
+using Andes.Mailer.Api.Configuration;
 using Andes.Mailer.Api.Filters;
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Actions.Users;
@@ -24,6 +25,13 @@ internal static class UserEndpoints
 
     private static async Task<Ok<PaginatedResponseDto<UserDto>>> ListUsers([AsParameters] ListUsersActionDto action, IUserService users, CancellationToken cancellationToken) =>
         TypedResults.Ok(await users.ListAsync(action, cancellationToken));
+
+    private static async Task<Ok<IReadOnlyList<DirectoryUserDto>>> SearchDirectory([AsParameters] SearchDirectoryActionDto action, IDirectoryUserService directory, CancellationToken cancellationToken)
+    {
+        var accounts = await directory.SearchAsync(action.Query.Trim(), action.Limit, cancellationToken);
+
+        return TypedResults.Ok<IReadOnlyList<DirectoryUserDto>>([.. accounts.Select(UserMapper.MapToDirectoryUserDto)]);
+    }
 
     private static async Task<Ok<UserDto>> GetUser(Guid id, IUserService users, CancellationToken cancellationToken) =>
         TypedResults.Ok(await users.GetAsync(id, cancellationToken));
@@ -65,6 +73,16 @@ internal static class UserEndpoints
             .WithName(nameof(ListUsers))
             .WithSummary("Lists one page of active users.")
             .ProducesValidationProblem();
+
+        group.MapGet("/directory", SearchDirectory)
+            .AddEndpointFilter<ActiveUserEndpointFilter>()
+            .AddEndpointFilter<ValidationEndpointFilter<SearchDirectoryActionDto>>()
+            .RequireRateLimiting(RateLimitingConfiguration.DirectorySearchPolicy)
+            .WithName(nameof(SearchDirectory))
+            .WithSummary("Finds people in the Entra directory whose name or email address starts with the text typed so far.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         group.MapGet("/{id:guid}", GetUser)
             .WithName(nameof(GetUser))

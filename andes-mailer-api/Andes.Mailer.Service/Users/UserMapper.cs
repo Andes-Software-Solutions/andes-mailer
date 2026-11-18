@@ -2,11 +2,12 @@ using System.Linq.Expressions;
 
 using Andes.Mailer.Dto.Users;
 using Andes.Mailer.Entity.Users;
+using Andes.Mailer.Service.Users.Models;
 
 namespace Andes.Mailer.Service.Users;
 
 /// <summary>
-/// Maps users to their response DTO.
+/// Maps users and directory accounts to their response DTOs.
 /// </summary>
 public static class UserMapper
 {
@@ -46,6 +47,23 @@ public static class UserMapper
             user.DateCreated,
             user.DateModified,
             Convert.ToBase64String(user.Version));
+    }
+
+    /// <summary>
+    /// Maps a directory account to a <see cref="DirectoryUserDto"/>.
+    /// </summary>
+    /// <param name="account">The account.</param>
+    /// <returns>The DTO.</returns>
+    public static DirectoryUserDto MapToDirectoryUserDto(DirectoryUser account)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+
+        return new DirectoryUserDto(
+            account.Id,
+            account.FirstName,
+            account.LastName,
+            User.ComposeFullName(account.FirstName, account.LastName),
+            account.Email);
     }
 
     #endregion

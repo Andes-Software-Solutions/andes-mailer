@@ -31,6 +31,14 @@ public interface IPermissionService
     /// otherwise, <see cref="TeamAccess.NotFound"/>, so a caller outside the team cannot tell whether it exists.
     /// </returns>
     Task<TeamAccess> CheckTeamPermissionAsync(Guid userId, Guid teamId, Permissions permission, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Determines whether a signed-in account is an active user of this application.
+    /// </summary>
+    /// <param name="userId">The account's Entra object id.</param>
+    /// <param name="cancellationToken">A token that cancels the query.</param>
+    /// <returns><see langword="true"/> if the account has an active user row; otherwise, <see langword="false"/>.</returns>
+    Task<bool> IsActiveUserAsync(Guid userId, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -82,4 +90,8 @@ public sealed class PermissionService(AndesMailerDbContext ctx) : IPermissionSer
 
         return granted is null ? TeamAccess.NotFound : TeamAccess.Forbidden;
     }
+
+    /// <inheritdoc/>
+    public Task<bool> IsActiveUserAsync(Guid userId, CancellationToken cancellationToken) =>
+        _ctx.Users.AsNoTracking().AnyAsync(u => u.Id == userId, cancellationToken);
 }

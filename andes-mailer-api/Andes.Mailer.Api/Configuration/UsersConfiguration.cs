@@ -9,6 +9,8 @@ internal static class UsersConfiguration
 
     public static IServiceCollection AddUsers(this IServiceCollection services)
     {
+        // Holds directory search results, which are the same for every caller.
+        services.AddHybridCache();
         services.AddScoped<IDirectoryUserService, DirectoryUserService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IPermissionService, PermissionService>();

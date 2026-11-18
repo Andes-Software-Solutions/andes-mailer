@@ -1,5 +1,3 @@
-using System.Net.Mail;
-
 using Andes.Mailer.Common.Constants.Emails;
 using Andes.Mailer.Common.Enums;
 
@@ -24,27 +22,7 @@ public sealed class EmailRecipientActionDtoValidator : AbstractValidator<EmailRe
     /// </summary>
     public EmailRecipientActionDtoValidator()
     {
-        // FluentValidation's EmailAddress() only checks for an inner '@'; MailAddress also refuses whitespace, control characters, and display names,
-        // which would otherwise reach the directory filter and, later, the message headers.
-        RuleFor(r => r.Address)
-            .Cascade(CascadeMode.Stop)
-            .NotEmpty()
-            .MaximumLength(EmailRecipientLimits.AddressMaxLength)
-            .Must(IsPlainAddress)
-            .WithMessage("'Address' must be a single email address with no name or spaces.");
+        RuleFor(r => r.Address).PlainAddress(EmailRecipientLimits.AddressMaxLength);
         RuleFor(r => r.Type).IsInEnum();
     }
-
-    #region Private methods
-
-    private static bool IsPlainAddress(string address)
-    {
-        var trimmed = address.Trim();
-
-        return MailAddress.TryCreate(trimmed, out var parsed)
-            && string.Equals(parsed.Address, trimmed, StringComparison.Ordinal)
-            && !trimmed.Any(char.IsWhiteSpace);
-    }
-
-    #endregion
 }

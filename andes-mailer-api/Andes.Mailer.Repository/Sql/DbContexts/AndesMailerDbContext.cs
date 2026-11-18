@@ -1,3 +1,4 @@
+using Andes.Mailer.Entity.ContactGroups;
 using Andes.Mailer.Entity.Emails;
 using Andes.Mailer.Entity.Emails.Templates;
 using Andes.Mailer.Entity.Teams;
@@ -37,6 +38,16 @@ public sealed class AndesMailerDbContext(DbContextOptions<AndesMailerDbContext> 
     /// Gets the memberships of users in teams.
     /// </summary>
     public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
+
+    /// <summary>
+    /// Gets the teams' contact groups.
+    /// </summary>
+    public DbSet<ContactGroup> ContactGroups => Set<ContactGroup>();
+
+    /// <summary>
+    /// Gets the members of the contact groups.
+    /// </summary>
+    public DbSet<ContactGroupMember> ContactGroupMembers => Set<ContactGroupMember>();
 
     /// <summary>
     /// Gets the emails.

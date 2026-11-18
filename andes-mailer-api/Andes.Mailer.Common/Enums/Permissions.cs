@@ -90,4 +90,10 @@ public enum Permissions
     /// </summary>
     [Description("Duplicates a team's emails and email templates")]
     DuplicateTeamEmails = 14,
+
+    /// <summary>
+    /// Creates, changes, and deactivates a team's contact groups.
+    /// </summary>
+    [Description("Creates, changes, and deactivates a team's contact groups")]
+    ManageTeamContactGroups = 15,
 }

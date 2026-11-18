@@ -2,6 +2,8 @@ using Andes.Mailer.Service.Users;
 using Andes.Mailer.Service.Users.Models;
 using Andes.Mailer.Unit.Test.TestInfrastructure;
 
+using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Graph;
 using Microsoft.Kiota.Abstractions.Authentication;
 
@@ -75,7 +77,7 @@ public sealed class DirectoryUserServiceTests
         using var http = new HttpClient(handler, disposeHandler: false);
         using var graph = new GraphServiceClient(http, new AnonymousAuthenticationProvider());
 
-        var found = await new DirectoryUserService(graph).FindByEmailsAsync(
+        var found = await CreateService(graph).FindByEmailsAsync(
             [" GRACE@contoso.com ", "amy@contoso.com", "nobody@external.org"],
             TestContext.Current.CancellationToken);
 
@@ -93,10 +95,73 @@ public sealed class DirectoryUserServiceTests
         using var http = new HttpClient(handler, disposeHandler: false);
         using var graph = new GraphServiceClient(http, new AnonymousAuthenticationProvider());
 
-        var found = await new DirectoryUserService(graph).FindByEmailsAsync([], TestContext.Current.CancellationToken);
+        var found = await CreateService(graph).FindByEmailsAsync([], TestContext.Current.CancellationToken);
 
         Assert.Empty(found);
         Assert.Null(handler.LastRequestUri);
+    }
+
+    [Fact]
+    public async Task SearchAsync_Query_SendsSearchClausesWithEventualConsistency()
+    {
+        using var handler = new StubHttpMessageHandler(Accounts());
+
+        await SearchAsync(handler, "  Ana   Roj ", 5);
+
+        var query = Uri.UnescapeDataString(handler.LastRequestUri!.Query);
+        Assert.Contains("$search=\"displayName:ana roj\" OR \"givenName:ana roj\" OR \"surname:ana roj\" OR \"mail:ana roj\" OR \"userPrincipalName:ana roj\"", query, StringComparison.Ordinal);
+        Assert.Contains("$top=5", query, StringComparison.Ordinal);
+        Assert.Contains("$count=true", query, StringComparison.Ordinal);
+        Assert.Contains("$orderby=displayName", query, StringComparison.Ordinal);
+        Assert.Equal("eventual", handler.LastRequestHeaders["ConsistencyLevel"]);
+    }
+
+    [Fact]
+    public async Task SearchAsync_QueryWithQuoteAndBackslash_EscapesSearchLiteral()
+    {
+        using var handler = new StubHttpMessageHandler(Accounts());
+
+        await SearchAsync(handler, @"a""b\c", 5);
+
+        var query = Uri.UnescapeDataString(handler.LastRequestUri!.Query);
+        Assert.Contains(@"""displayName:a\""b\\c""", query, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SearchAsync_Accounts_MapsMailOrSignInNameAndSkipsAccountsWithoutAddress()
+    {
+        var guestId = Guid.NewGuid();
+        var emptyMailId = Guid.NewGuid();
+        using var handler = new StubHttpMessageHandler(Accounts(
+            $$"""{ "id": "{{_accountId}}", "givenName": "Ana", "surname": "Rojas", "mail": "Ana.Rojas@Contoso.com", "userPrincipalName": "ana@contoso.onmicrosoft.com" }""",
+            $$"""{ "id": "{{guestId}}", "displayName": "Ana Guest", "mail": null, "userPrincipalName": "ana@contoso.com" }""",
+            $$"""{ "id": "{{emptyMailId}}", "displayName": "Ana Empty", "mail": "", "userPrincipalName": "Ana.Empty@Contoso.com" }""",
+            $$"""{ "id": "{{Guid.NewGuid()}}", "displayName": "No Address" }"""));
+
+        var accounts = await SearchAsync(handler, "ana", 10);
+
+        Assert.Equal(
+            [
+                new DirectoryUser(_accountId, "Ana", "Rojas", "ana.rojas@contoso.com"),
+                new DirectoryUser(guestId, "Ana Guest", string.Empty, "ana@contoso.com"),
+                new DirectoryUser(emptyMailId, "Ana Empty", string.Empty, "ana.empty@contoso.com"),
+            ],
+            accounts);
+    }
+
+    [Fact]
+    public async Task SearchAsync_SameQueryTwice_CallsGraphOnce()
+    {
+        using var handler = new StubHttpMessageHandler(Accounts($$"""{ "id": "{{_accountId}}", "givenName": "Ana", "mail": "ana@contoso.com" }"""));
+        using var http = new HttpClient(handler, disposeHandler: false);
+        using var graph = new GraphServiceClient(http, new AnonymousAuthenticationProvider());
+        var service = CreateService(graph);
+
+        await service.SearchAsync("Ana", 10, TestContext.Current.CancellationToken);
+        var second = await service.SearchAsync(" ana ", 10, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, handler.RequestCount);
+        Assert.Equal(_accountId, Assert.Single(second).Id);
     }
 
     #region Private methods
@@ -108,7 +173,19 @@ public sealed class DirectoryUserServiceTests
         using var http = new HttpClient(handler, disposeHandler: false);
         using var graph = new GraphServiceClient(http, new AnonymousAuthenticationProvider());
 
-        return await new DirectoryUserService(graph).FindByEmailAsync(email, TestContext.Current.CancellationToken);
+        return await CreateService(graph).FindByEmailAsync(email, TestContext.Current.CancellationToken);
+    }
+
+    // A fresh provider per service, so no cached search leaks from one test into another.
+    private static DirectoryUserService CreateService(GraphServiceClient graph) =>
+        new(graph, new ServiceCollection().AddHybridCache().Services.BuildServiceProvider().GetRequiredService<HybridCache>());
+
+    private static async Task<IReadOnlyList<DirectoryUser>> SearchAsync(StubHttpMessageHandler handler, string query, int limit)
+    {
+        using var http = new HttpClient(handler, disposeHandler: false);
+        using var graph = new GraphServiceClient(http, new AnonymousAuthenticationProvider());
+
+        return await CreateService(graph).SearchAsync(query, limit, TestContext.Current.CancellationToken);
     }
 
     #endregion

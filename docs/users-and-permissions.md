@@ -1,6 +1,6 @@
 # Users and permissions
 
-Signing in with Entra proves who someone is; it says nothing about what they may do. The API keeps its own list of users, gives them roles, and checks a permission before each change to that list, to a team, and to its emails. This page covers the data model, the `/api/users` endpoints, how permission checks work, and the Microsoft Graph setup that adding a user needs. For how tokens are issued and validated, see [Authentication](authentication.md). For teams and their members, see [Teams](teams.md). For the endpoints that check `ComposeTeamEmails`, `CanAttachDocuments`, and `DuplicateTeamEmails` on emails, see [Emails and attachments](emails-and-attachments.md). For the ones that check `ManageTeamTemplates` and `DuplicateTeamEmails` on templates, see [Email templates](email-templates.md).
+Signing in with Entra proves who someone is; it says nothing about what they may do. The API keeps its own list of users, gives them roles, and checks a permission before each change to that list, to a team, and to its emails. This page covers the data model, the `/api/users` endpoints (including the directory search that backs recipient autocomplete), how permission checks work, and the Microsoft Graph setup that adding a user needs. For how tokens are issued and validated, see [Authentication](authentication.md). For teams and their members, see [Teams](teams.md). For the endpoints that check `ComposeTeamEmails`, `CanAttachDocuments`, and `DuplicateTeamEmails` on emails, see [Emails and attachments](emails-and-attachments.md). For the ones that check `ManageTeamTemplates` and `DuplicateTeamEmails` on templates, see [Email templates](email-templates.md). For the ones that check `ManageTeamContactGroups`, see [Contact groups](contact-groups.md).
 
 ## How it fits together
 
@@ -9,7 +9,7 @@ Signing in with Entra proves who someone is; it says nothing about what they may
 - A **permission** is one action the API checks before it runs.
 - Adding a user takes only an email address. The API asks Microsoft Graph for the account that owns it and copies the id, name, and address, so nobody types an object id by hand.
 
-Signing in does not create a user. A caller with a valid token whose `oid` has no active user row can still call the read endpoints, but holds no permissions.
+Signing in does not create a user. A caller with a valid token whose `oid` has no active user row can still call the read endpoints, but holds no permissions, and cannot [search the directory](#search-the-directory).
 
 ## Data model
 
@@ -43,8 +43,8 @@ Queries on `User` and `UserRole` hide deactivated rows by default (the `Deactiva
 
 | Role | Id | Scope | Permissions |
 | --- | --- | --- | --- |
-| `Administrator` | 1 | Global | All fourteen. In a team, this includes its emails and templates. |
-| `TeamAdministrator` | 2 | One team | `CreateTeamUser`, `ModifyTeamUser`, `DeactivateTeamUser`, `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails`, `ManageTeamTemplates`, `DuplicateTeamEmails` |
+| `Administrator` | 1 | Global | All fifteen. In a team, this includes its emails, templates, and contact groups. |
+| `TeamAdministrator` | 2 | One team | `CreateTeamUser`, `ModifyTeamUser`, `DeactivateTeamUser`, `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails`, `ManageTeamTemplates`, `DuplicateTeamEmails`, `ManageTeamContactGroups` |
 | `TeamMember` | 3 | One team | `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails`, `DuplicateTeamEmails` |
 
 | Permission | Id | Checked by |
@@ -63,12 +63,13 @@ Queries on `User` and `UserRole` hide deactivated rows by default (the `Deactiva
 | `ComposeTeamEmails` | 12 | Every route under `/api/teams/{teamId}/emails`, including attachment reads and `POST .../emails/from-template`; and every route under `/api/teams/{teamId}/templates`, so every team member can read and use templates |
 | `ManageTeamTemplates` | 13 | `POST`, `PUT`, and `DELETE` on `/api/teams/{teamId}/templates`, and `POST` and `DELETE` on `/api/teams/{teamId}/templates/{templateId}/attachments`: creating, changing, and deactivating a template and its documents. Each also needs `ComposeTeamEmails`, and the attachment routes `CanAttachDocuments` |
 | `DuplicateTeamEmails` | 14 | `POST /api/teams/{teamId}/emails/{id}/duplicate` and `POST /api/teams/{teamId}/templates/{id}/duplicate`: copying an email into a new draft and a template into a new template. Both also need `ComposeTeamEmails`, and the template route `ManageTeamTemplates`, so a `TeamMember` can duplicate an email but not a template |
+| `ManageTeamContactGroups` | 15 | `POST`, `PUT`, and `DELETE` on `/api/teams/{teamId}/contact-groups`: creating, replacing, and deactivating a team's contact groups. Each also needs `ComposeTeamEmails`, which alone lets a member list and read groups |
 
-Team creation, editing, and deactivation (8 to 10) are held by `Administrator` only, so a team administrator can manage who is in their team but not the team itself. `ManageTeamTemplates` (13) is held by `Administrator` and `TeamAdministrator`: a `TeamMember` can read and use a team's templates but not change them, and gets a 403 on the write routes. `DuplicateTeamEmails` (14) is held by all three roles, but duplicating a template also needs `ManageTeamTemplates`, so only `Administrator` and `TeamAdministrator` can do it. `GET /api/teams` needs no permission; it lists the teams the caller belongs to, or every team for an `Administrator`.
+Team creation, editing, and deactivation (8 to 10) are held by `Administrator` only, so a team administrator can manage who is in their team but not the team itself. `ManageTeamTemplates` (13) is held by `Administrator` and `TeamAdministrator`: a `TeamMember` can read and use a team's templates but not change them, and gets a 403 on the write routes. `DuplicateTeamEmails` (14) is held by all three roles, but duplicating a template also needs `ManageTeamTemplates`, so only `Administrator` and `TeamAdministrator` can do it. `ManageTeamContactGroups` (15) is held by `Administrator` and `TeamAdministrator`: a `TeamMember` can list and read a team's contact groups but not change them, and gets a 403 on the write routes. `GET /api/teams` needs no permission; it lists the teams the caller belongs to, or every team for an `Administrator`.
 
 The permissions that guard team routes are checked **in the team**: a `TeamMember` in Team A holds nothing in Team B. A user with no role and no team, such as one you just added or reactivated, can do nothing beyond the read endpoints of `/api/users` until someone adds them to a team. See [Teams](teams.md#how-team-access-is-checked) and [Emails and attachments](emails-and-attachments.md#attachments).
 
-The enums are `Roles` and `Permissions` in `Andes.Mailer.Common/Enums/`, and `RoleScopes` in `Andes.Mailer.Common/Constants/Users/` lists which roles are global and which are team roles. The reference rows belong to the code, not to operators: they are seeded with `HasData`, so a change to a role's permissions ships as a new migration. The team grants arrive in the migration `*_AddTeams.cs`, `ManageTeamTemplates` and its grants in `*_AddEmailTemplates.cs`, and `DuplicateTeamEmails` and its grants in `*_AddDuplicateTeamEmailsPermission.cs`.
+The enums are `Roles` and `Permissions` in `Andes.Mailer.Common/Enums/`, and `RoleScopes` in `Andes.Mailer.Common/Constants/Users/` lists which roles are global and which are team roles. The reference rows belong to the code, not to operators: they are seeded with `HasData`, so a change to a role's permissions ships as a new migration. The team grants arrive in the migration `*_AddTeams.cs`, `ManageTeamTemplates` and its grants in `*_AddEmailTemplates.cs`, `DuplicateTeamEmails` and its grants in `*_AddDuplicateTeamEmailsPermission.cs`, and `ManageTeamContactGroups` and its grants in `*_AddContactGroups.cs`.
 
 ### Seed data
 
@@ -81,12 +82,13 @@ Without that first administrator nobody could hold `CreateUser`, so nobody could
 
 ## Endpoints
 
-All routes sit under `/api/users` and need a token with the `access_as_user` scope, like every other endpoint. Errors are Problem Details responses. The read endpoints need no permission; each write endpoint needs the permission shown.
+All routes sit under `/api/users` and need a token with the `access_as_user` scope, like every other endpoint. Errors are Problem Details responses. The read endpoints need no permission, except the directory search, which needs an active user; each write endpoint needs the permission shown.
 
 | Method and route | Permission | Success |
 | --- | --- | --- |
 | `GET /api/users/me` | None | 200 with the caller's object id and name. Unchanged. |
 | `GET /api/users` | None | 200 with one page of active users |
+| `GET /api/users/directory` | An active user | 200 with the directory accounts that match, not paginated. Rate limited. |
 | `GET /api/users/{id}` | None | 200 with the user |
 | `POST /api/users` | `CreateUser` | 201 with the user and a `Location` of `/api/users/{id}` |
 | `PUT /api/users/{id}` | `ModifyUser` | 200 with the updated user |
@@ -136,6 +138,68 @@ A value outside the range returns a 400 validation problem. A page past the end 
 ### Get a user
 
 `GET /api/users/{id}` returns 404 when no active user has that id, including a deactivated one.
+
+### Search the directory
+
+The compose screen needs a recipient picker that suggests people as someone types, the way Outlook does. `GET /api/users/directory` searches the whole Entra directory, not only the people who are users of Andes Mailer, because a draft can go to anyone in the organization. The UI debounces its calls and sends one request per pause in typing.
+
+```http
+GET /api/users/directory?query=ana%20roj&limit=10
+```
+
+| Parameter | Default | Rule |
+| --- | --- | --- |
+| `query` | None | Required. 2 to 100 characters after trimming. Letters (accented ones included), digits, spaces, and `. ' @ _ + -` are allowed. Anything else is a 400, and the ampersand (`&`) is rejected on purpose because of a known Graph `$search` bug. |
+| `limit` | 10 | 1 to 25. |
+
+An invalid `query` or `limit` returns a 400 validation problem. The response is a plain array, not a page, ordered by display name:
+
+```json
+[
+  {
+    "id": "4ee09cb0-d7e7-4be4-b82f-2674695eb9df",
+    "firstName": "Ana",
+    "lastName": "Rojas",
+    "fullName": "Ana Rojas",
+    "email": "ana.rojas@andes.example"
+  }
+]
+```
+
+`id` is the account's Entra object id, so when the person is also a user of the application it equals that user's `id`. `email` is the account's `mail` address, or its `userPrincipalName` when `mail` is empty, in lowercase. When nobody matches, the response is `200` with `[]`.
+
+| Status | When |
+| --- | --- |
+| 200 | The search ran. The array can be empty. |
+| 400 | `query` or `limit` is outside the rules above. |
+| 403 | The caller is not an active user of the application. See [Who can search](#who-can-search). |
+| 429 | The caller is over the [rate limit](#rate-limit). The response carries a `Retry-After` header. |
+
+A Graph failure, such as a missing consent, still returns 500 with the cause in the logs.
+
+**How the search matches.** `IDirectoryUserService.SearchAsync` calls Microsoft Graph as the application and searches `displayName`, `givenName`, `surname`, `mail`, and `userPrincipalName` at once, with the `ConsistencyLevel: eventual` header that Graph requires for `$search` on directory objects. Graph splits `displayName` into words, so "ana roj" finds "Ana Rojas". The other four properties match from their start, so `ana.r` finds `ana.rojas@andes.example`.
+
+#### Who can search
+
+The endpoint needs no permission, but it reads through the API's own Graph access, so a valid token alone is not enough. `ActiveUserEndpointFilter` (`Andes.Mailer.Api/Filters/`) lets only an **active user** of the application through. It answers 403 to every other holder of a token for this app, which includes a deactivated user, someone who signed in but was never added, and a guest account the tenant issues tokens to. Without it, any of them could browse the company directory.
+
+#### Caching
+
+Results are kept in `HybridCache` for 2 minutes and shared by every caller. The key ignores case and extra spaces, so "Ana  Roj" and "ana roj" share one entry, and `limit` is part of the key. A new directory account can take about 2 minutes to appear in results, and a renamed one shows its old name for as long.
+
+#### Rate limit
+
+Autocomplete multiplies requests, so each caller gets a **token bucket**, partitioned by the `oid` claim, that stops a client with no debounce from exhausting the Graph quota. Every request to the endpoint spends one token, including ones that end as a 400 or 403, because the limiter runs before the endpoint's filters. Over the limit, the API answers 429 Problem Details with a `Retry-After` header in seconds, and does not queue the request.
+
+The bucket is configured in `RateLimiting:DirectorySearch`. The defaults live in code, so `appsettings.json` need not set them:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `TokenLimit` | 20 | The largest burst a caller can make at once. |
+| `TokensPerPeriod` | 10 | Tokens given back each period. |
+| `ReplenishmentPeriod` | `00:00:10` | The time between refills. Allowed from one second to one hour. |
+
+At the defaults a caller can burst 20 searches, then continue at about one per second. The values are validated when the API starts, and it refuses to start if `TokenLimit` or `TokensPerPeriod` is zero or negative, or the period is outside its range.
 
 ### Add a user
 
@@ -194,7 +258,7 @@ Self-deactivation is blocked so the last administrator cannot lock everyone out 
 
 ## How permission checks work
 
-There are two filters, one for each scope of role. Both run before request validation and the handler.
+There are two permission filters, one for each scope of role, and a third that only checks that the caller is an active user. All of them run before request validation and the handler.
 
 ### Global permissions
 
@@ -217,19 +281,23 @@ There are two filters, one for each scope of role. Both run before request valid
 
 [Teams](teams.md#how-team-access-is-checked) walks through the cases.
 
-Both checks run on every request and read the database, so a role or membership change takes effect on the caller's next call; there is nothing to wait out in the token. A deactivated or unknown user holds no permissions.
+### Active users
 
-To protect a new endpoint, add `.AddEndpointFilter(new PermissionEndpointFilter(Permissions.X))` to it, or `new TeamPermissionEndpointFilter(Permissions.X)` for a route under `/api/teams/{teamId:guid}`. Add a new permission as an enum value and a migration that seeds it and the role grants.
+`ActiveUserEndpointFilter` guards endpoints that need no permission but reach data beyond this application. Today that is only [the directory search](#search-the-directory). It reads the caller's `oid` claim and asks `IPermissionService.IsActiveUserAsync` whether an active `[Core].[User]` row has that id. If the claim is missing or not a GUID, or there is no active row, it returns a 403 Problem Details response.
+
+These checks run on every request and read the database, so a role or membership change takes effect on the caller's next call; there is nothing to wait out in the token. A deactivated or unknown user holds no permissions.
+
+To protect a new endpoint, add `.AddEndpointFilter(new PermissionEndpointFilter(Permissions.X))` to it, or `new TeamPermissionEndpointFilter(Permissions.X)` for a route under `/api/teams/{teamId:guid}`, or `.AddEndpointFilter<ActiveUserEndpointFilter>()` when it needs no permission but must stay out of reach of anyone who is not an active user. Add a new permission as an enum value and a migration that seeds it and the role grants.
 
 ## Microsoft Graph setup
 
-Adding a user calls Microsoft Graph with the API's own identity (an app-only call), not the signed-in user's. That is why the API now needs a credential, which [replaces the old "no client secret anywhere" rule](authentication.md#configuration).
+Adding a user, and searching the directory, call Microsoft Graph with the API's own identity (an app-only call), not the signed-in user's. That is why the API now needs a credential, which [replaces the old "no client secret anywhere" rule](authentication.md#configuration).
 
 ### Once per environment: grant the permission
 
 1. In the Entra admin center, open the app registration `b40defa0-5309-45c4-82fc-cb284010cc10`.
 2. Under **API permissions**, add the Microsoft Graph **application** permission `User.Read.All`.
-3. Choose **Grant admin consent**. Without consent, Graph returns 403 and `POST /api/users` fails with a 500.
+3. Choose **Grant admin consent**. Without consent, Graph returns 403 and `POST /api/users` and `GET /api/users/directory` fail with a 500.
 
 ### Local development: a client secret
 
@@ -256,5 +324,6 @@ The `AddTeams` migration **deletes every existing email, recipient, and attachme
 ## Known limitations
 
 - **No management of the global role.** No endpoint grants or revokes `Administrator`. Until one exists, change `[Core].[UserRole]` with SQL. Team roles are managed through [the member endpoints](teams.md#team-members). A reactivated user starts with no roles and no teams, so an administrator has to re-grant the global role the same way and add them to their teams again.
-- **Graph failures return 500.** A Graph outage, a missing consent, or a bad credential surfaces as a 500 from `POST /api/users`, not a specific error. The cause is in the API logs.
-- **No UI.** The UI calls only `GET /api/users/me`; it has no screens for the other endpoints yet.
+- **Graph failures return 500.** A Graph outage, a missing consent, or a bad credential surfaces as a 500 from `POST /api/users` and `GET /api/users/directory`, not a specific error. The cause is in the API logs.
+- **Search results lag the directory.** Results are cached for 2 minutes and shared by every caller, so a new, renamed, or removed account can take about that long to show up.
+- **No UI.** The UI calls only `GET /api/users/me`; it has no screens for the other endpoints yet, including a recipient picker for the directory search.
