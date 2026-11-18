@@ -10,6 +10,7 @@ Andes Mailer will send email on behalf of teams, and a message takes work to pre
 - A **recipient** is an address under the To, Cc, or Bcc header. The API asks Microsoft Graph who owns each new address, so the UI can later show names for people in your organization. Any other address is kept as plain text.
 - An **attachment** is a document added to a draft. The request that receives it returns at once; a background job copies the file to Azure Blob Storage, and the client polls for the result. This keeps a slow upload to storage from holding the request open or failing the user's save.
 - A draft can start from a **template**: `POST /api/teams/{teamId}/emails/from-template` copies a [template](email-templates.md)'s subject, body, recipients, and documents into a new draft, and records the template's id as the draft's `templateId`. The copy is independent: later template changes never reach the draft. See [Start an email from a template](#start-an-email-from-a-template).
+- A team member can also **duplicate** an email: `POST /api/teams/{teamId}/emails/{id}/duplicate` copies a draft or a sent email into a new draft, with its own copy of every uploaded document. It needs the `DuplicateTeamEmails` permission. See [Duplicate an email](#duplicate-an-email).
 - A draft never leaves the `Draft` status yet. `Sent` exists in the model so a later feature can use it without a migration.
 
 ### Out of scope for now
@@ -74,7 +75,7 @@ A recipient has no soft delete. When you save a draft without an address it had 
 | `FileName` | The client's name with any folder path removed, up to 255 characters. |
 | `DocumentTypeId`, `ContentType` | Taken from the extension. The media type is what a download is served with. |
 | `SizeBytes` | The bytes that reached the server's disk, not the size the request declared. |
-| `BlobName` | `{emailId:N}/{attachmentId:N}`: both ids as 32 hex digits, so a draft's documents share a prefix. A template's documents live in the same container under `templates/{templateId:N}/{attachmentId:N}`, so the two kinds of name never collide. A draft made from a template gets its own copy of each document under this pattern. |
+| `BlobName` | `{emailId:N}/{attachmentId:N}`: both ids as 32 hex digits, so a draft's documents share a prefix. A template's documents live in the same container under `templates/{templateId:N}/{attachmentId:N}`, so the two kinds of name never collide. A draft made from a template, or by duplicating another email, gets its own copy of each document under this pattern. |
 | `StatusId`, `FailureReason` | Where the upload stands. A failure carries a short message to show the user. |
 | `DateCreated`, `DateModified`, `DateDeactivated`, `Version` | Removing an attachment soft-deletes it. |
 
@@ -88,6 +89,8 @@ Every email route sits under `/api/teams/{teamId}`, and a check on the team runs
 - A caller who is in the team but whose role lacks the permission gets 403. Both team roles hold it today, so in practice this does not happen yet.
 - A global `Administrator` passes the check for every active team, member or not.
 
+`POST .../emails/{id}/duplicate` also needs `DuplicateTeamEmails` in the team, which both team roles hold; see [Duplicate an email](#duplicate-an-email).
+
 The routes moved from `/api/emails` to `/api/teams/{teamId}/emails`. **This is a breaking change**: the old routes no longer exist.
 
 ### Emails
@@ -98,6 +101,7 @@ The routes moved from `/api/emails` to `/api/teams/{teamId}/emails`. **This is a
 | `GET /api/teams/{teamId}/emails/{id}` | 200 with the email, its recipients, and its attachments | 403; 404 |
 | `POST /api/teams/{teamId}/emails` | 201 with the email and a `Location` of `/api/teams/{teamId}/emails/{id}` | 400; 403; 404 |
 | `POST /api/teams/{teamId}/emails/from-template` | 201 with the email and a `Location` of `/api/teams/{teamId}/emails/{id}` | 400; 403; 404 if the team has no such active template or storage has lost one of its documents; 409 if a template attachment is still uploading |
+| `POST /api/teams/{teamId}/emails/{id}/duplicate` | 201 with the new draft and a `Location` of `/api/teams/{teamId}/emails/{id}` | 403; 404 if the team has no such email or storage has lost one of its documents; 409 if an attachment is still uploading or the email changed at the same moment |
 | `PUT /api/teams/{teamId}/emails/{id}` | 200 with the updated email | 400; 403; 404; 409 if the `version` is stale or the email is no longer a draft |
 | `DELETE /api/teams/{teamId}/emails/{id}` | 204 | 403; 404; 409 if another request changed the email at the same moment |
 
@@ -178,6 +182,44 @@ The route needs only `ComposeTeamEmails`, so any member of the team can use it, 
 - If any template attachment is `Pending` or `Uploading`, the call is a 409 and nothing is created. If a template document is missing from storage, it is a 404 and nothing is saved; the copies already made are deleted.
 
 From then on the draft is ordinary: update, delete, and attach documents through the endpoints on this page. The full rules, failure handling, and the template endpoints are in [Email templates](email-templates.md#start-an-email-from-a-template).
+
+### Duplicate an email
+
+Teams often send a message that is close to one they sent before: the same recipients with a new date, or a draft that needs a second version. Duplicating copies the email into a new draft so nobody starts over.
+
+```http
+POST /api/teams/0199fa10-3c4d-7e21-b6a0-9d8c7b6a5f40/emails/0199f7a2-5d1e-7c3b-9a44-1f2e3d4c5b6a/duplicate
+```
+
+The request has no body. The route needs `ComposeTeamEmails` (the team check every email route runs) and `DuplicateTeamEmails`; both team roles and the global `Administrator` hold them. It returns 201 with an [`EmailDto`](#the-email-object) and a `Location` of `/api/teams/{teamId}/emails/{id}`.
+
+What the new draft gets:
+
+| Part | What happens |
+| --- | --- |
+| Source | A `Draft` or a `Sent` email of the same team. Nothing sends yet, so every email is a draft today. |
+| Author and status | The caller is the `authorId`, whoever wrote the source. The status is always `Draft`, even for a `Sent` source. |
+| `templateId` | Kept from the source, so a copy of a draft made from a template still names that template. It is `null` when the source has none. |
+| Subject and body | Copied as stored. They were sanitized when the source was saved. |
+| Recipients | Copied with the same header and order, **as stored**, including the resolved `userId` and `displayName`. The API makes no new directory lookup, unlike [from-template](#start-an-email-from-a-template), so a name does not refresh; see [Recipient resolution](#recipient-resolution). |
+| Attachments | Each `Uploaded` attachment is copied inside Blob Storage to a new attachment row with status `Uploaded` and the blob name `{emailId:N}/{attachmentId:N}`. `Failed` attachments are left out, because they hold no document. The copies are ready at once, so there is nothing to poll. |
+
+The copy is independent: editing it, removing its attachments, or deleting it never touches the source, and the reverse holds too.
+
+| Status | When |
+| --- | --- |
+| 201 | The draft was created. |
+| 403 | The caller is in the team but their role lacks `DuplicateTeamEmails`. Not returned today, because both team roles hold it. |
+| 404 | The team is missing or the caller is not in it, or the team has no active email with the id (another team's email gives the same answer), or storage no longer holds one of the source's documents. |
+| 409 | An attachment of the source is `Pending` or `Uploading` (`EmailNotReadyException`), or another request changed the email at the same moment. |
+
+The 404 for a missing document carries advice that depends on the source. For a draft it reads "One of the email's documents is no longer in storage. Remove it from the email and try again.", because you can remove the dead attachment. For a sent email it reads "One of the email's documents is no longer in storage, so the email cannot be duplicated.", because a sent email can no longer change.
+
+A 409 for an upload in progress reads "The email's attachments are still uploading. Try again once every attachment is Uploaded or Failed." Nothing is created; call again once the attachments settle.
+
+Copying follows the same order and cleanup rules as [from-template](email-templates.md#when-the-save-fails): the documents are copied first, then the email and its attachment rows are saved in one save, and the copies are deleted if anything fails before the save commits. The code is shared (`AttachmentCopy`, in `Andes.Mailer.Service/Emails/Attachments/`).
+
+The permission arrives in the migration `*_AddDuplicateTeamEmailsPermission.cs`, which only adds the permission and its grants. Apply it as described in [Run it locally](#run-it-locally).
 
 ### Body sanitization
 
@@ -385,8 +427,8 @@ Calling the email routes needs a [team](teams.md): create one as the seeded admi
 - **No sending.** Nothing moves a draft to `Sent`; the status is there for the sending feature. The team's service account will be the sender.
 - **No per-author protection.** Any team member can edit or delete a draft another member started. There is no lock, so two members editing at once is caught only by the `version` check, as a 409.
 - **Deleting an email leaves its documents in storage.** `DELETE /api/teams/{teamId}/emails/{id}` soft-deletes the email, and its recipient and attachment rows with it as far as queries go, but it does not delete the blobs. Remove attachments first if the documents must go. Deactivating a [template](email-templates.md#deactivate-a-template) behaves the same way.
-- **Copies for a template-based draft can be left behind.** If `from-template` fails and the cleanup of its copies also fails, or the API cannot tell whether the save landed, the copied blobs stay in the container.
+- **Copies for a template-based or duplicated draft can be left behind.** If `from-template` or `duplicate` fails and the cleanup of its copies also fails, or the API cannot tell whether the save landed, the copied blobs stay in the container.
 - **A single instance only.** See [Scaling out](#scaling-out).
 - **No malware scanning.** The content check confirms a file's type, not that it is safe. Treat a download as untrusted.
-- **Recipient names do not refresh.** A recipient's `userId` and `displayName` are set when the address is added.
+- **Recipient names do not refresh.** A recipient's `userId` and `displayName` are set when the address is added, and a duplicated email carries them over unchanged.
 - **No UI.** The UI has no screens for emails, attachments, or templates yet.

@@ -190,6 +190,62 @@ public sealed class EmailEndpointsIntegrationTests(SqlServerFixture fixture, Azu
         Assert.Equal(0, list!.TotalCount);
     }
 
+    [Fact]
+    public async Task DuplicateEmail_TeammatesEmail_ReturnsCreatedDraftByTheCaller()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var author = await TestCallers.SeedMemberAsync(_fixture, team);
+        var teammate = await TestCallers.SeedMemberAsync(_fixture, team);
+        await using var factory = CreateFactory();
+        var email = await CreateDraftAsync(factory, team, author, new EmailRecipientActionDto("amy@external.org", RecipientTypes.To));
+        using var client = TestCallers.CreateClient(factory, teammate);
+
+        using var response = await client.PostAsync(new Uri($"{EmailsPath(team)}/{email.Id}/duplicate", UriKind.Relative), null, TestContext.Current.CancellationToken);
+        var copy = await response.Content.ReadFromJsonAsync<EmailDto>(ApiJson.Options, TestContext.Current.CancellationToken);
+        var reloaded = await client.GetFromJsonAsync<EmailDto>(response.Headers.Location, ApiJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal($"{EmailsPath(team)}/{copy!.Id}", response.Headers.Location?.OriginalString);
+        Assert.NotEqual(email.Id, copy.Id);
+        Assert.Equal(EmailStatuses.Draft, reloaded!.Status);
+        Assert.Equal(teammate, reloaded.AuthorId);
+        Assert.Equal((email.Subject, email.BodyHtml), (reloaded.Subject, reloaded.BodyHtml));
+        Assert.Equal(email.Recipients, reloaded.Recipients);
+    }
+
+    [Fact]
+    public async Task DuplicateEmail_AdministratorOutsideTheTeam_ReturnsCreated()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var author = await TestCallers.SeedMemberAsync(_fixture, team);
+        var administrator = await TestCallers.SeedAsync(_fixture, Roles.Administrator);
+        await using var factory = CreateFactory();
+        var email = await CreateDraftAsync(factory, team, author);
+        using var client = TestCallers.CreateClient(factory, administrator);
+
+        using var response = await client.PostAsync(new Uri($"{EmailsPath(team)}/{email.Id}/duplicate", UriKind.Relative), null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DuplicateEmail_MemberOfAnotherTeam_ReturnsNotFound()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var otherTeam = await TestCallers.SeedTeamAsync(_fixture);
+        var author = await TestCallers.SeedMemberAsync(_fixture, team);
+        var outsider = await TestCallers.SeedMemberAsync(_fixture, otherTeam);
+        await using var factory = CreateFactory();
+        var email = await CreateDraftAsync(factory, team, author);
+        using var client = TestCallers.CreateClient(factory, outsider);
+
+        using var throughOwnTeam = await client.PostAsync(new Uri($"{EmailsPath(otherTeam)}/{email.Id}/duplicate", UriKind.Relative), null, TestContext.Current.CancellationToken);
+        using var throughEmailsTeam = await client.PostAsync(new Uri($"{EmailsPath(team)}/{email.Id}/duplicate", UriKind.Relative), null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotFound, throughOwnTeam.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, throughEmailsTeam.StatusCode);
+    }
+
     #region Private methods
 
     private static string EmailsPath(Guid teamId) => $"/api/teams/{teamId}/emails";

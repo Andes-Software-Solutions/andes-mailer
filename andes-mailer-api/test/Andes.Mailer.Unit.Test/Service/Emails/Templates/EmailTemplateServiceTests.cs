@@ -1,20 +1,30 @@
+using Andes.Mailer.Common.Constants.Emails;
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Actions.Emails;
 using Andes.Mailer.Dto.Actions.Emails.Templates;
 using Andes.Mailer.Dto.Emails.Templates;
+using Andes.Mailer.Entity.Emails.Templates;
+using Andes.Mailer.Repository.Blob;
+using Andes.Mailer.Repository.Blob.Exceptions;
 using Andes.Mailer.Repository.Sql.DbContexts;
+using Andes.Mailer.Service.Emails.Exceptions;
 using Andes.Mailer.Service.Emails.Templates;
 using Andes.Mailer.Service.Exceptions;
 using Andes.Mailer.Unit.Test.TestInfrastructure;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
+
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace Andes.Mailer.Unit.Test.Service.Emails.Templates;
 
 public sealed class EmailTemplateServiceTests : IDisposable
 {
     private readonly MailerDbFixture _fixture = new();
+    private readonly IAttachmentStore _store = Substitute.For<IAttachmentStore>();
 
     [Fact]
     public async Task CreateAsync_Template_StoresTrimmedNameSanitizedBodyAndRecipientsInOrder()
@@ -206,6 +216,165 @@ public sealed class EmailTemplateServiceTests : IDisposable
         Assert.True(racer.Raced);
     }
 
+    [Fact]
+    public async Task DuplicateAsync_NoName_CopiesContentAndRecipientsAndNamesItAfterTheSource()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var admin = await _fixture.AddUserAsync("ada@contoso.com");
+        var member = await _fixture.AddUserAsync("bob@contoso.com");
+        var source = await _fixture.AddTemplateAsync(team.Id, admin.Id, "Welcome");
+        await using (var setupCtx = _fixture.CreateContext())
+        {
+            setupCtx.AddRange(
+                new EmailTemplateRecipient { TemplateId = source.Id, Address = "zed@external.org", RecipientTypeId = RecipientTypes.Cc, Position = 0 },
+                new EmailTemplateRecipient { TemplateId = source.Id, Address = "grace@contoso.com", RecipientTypeId = RecipientTypes.To, Position = 0 });
+            await setupCtx.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        await using var ctx = _fixture.CreateContext();
+
+        var copy = await DuplicateAsync(ctx, team.Id, source.Id, member.Id, null);
+
+        Assert.NotEqual(source.Id, copy.Id);
+        Assert.Equal("Welcome (copy)", copy.Name);
+        Assert.Equal(member.Id, copy.AuthorId);
+        Assert.Equal(source.Subject, copy.Subject);
+        Assert.Equal(source.BodyHtml, copy.BodyHtml);
+        Assert.Equal(
+            [new EmailTemplateRecipientDto("grace@contoso.com", RecipientTypes.To), new EmailTemplateRecipientDto("zed@external.org", RecipientTypes.Cc)],
+            copy.Recipients);
+        await using var readCtx = _fixture.CreateContext();
+        var readBack = await CreateService(readCtx).GetAsync(team.Id, copy.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(copy.Recipients, readBack.Recipients);
+    }
+
+    [Fact]
+    public async Task DuplicateAsync_CopyNamesTaken_TakesTheNextFreeNumberIgnoringCase()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var admin = await _fixture.AddUserAsync("ada@contoso.com");
+        var source = await _fixture.AddTemplateAsync(team.Id, admin.Id, "Welcome");
+        await _fixture.AddTemplateAsync(team.Id, admin.Id, "Welcome (copy)");
+        await _fixture.AddTemplateAsync(team.Id, admin.Id, "WELCOME (COPY 2)");
+        await using var ctx = _fixture.CreateContext();
+
+        var copy = await DuplicateAsync(ctx, team.Id, source.Id, admin.Id, null);
+
+        Assert.Equal("Welcome (copy 3)", copy.Name);
+    }
+
+    [Fact]
+    public async Task DuplicateAsync_NameAtTheLimit_CutsItSoTheSuffixFits()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var admin = await _fixture.AddUserAsync("ada@contoso.com");
+        var name = new string('a', EmailTemplateLimits.NameMaxLength);
+        var source = await _fixture.AddTemplateAsync(team.Id, admin.Id, name);
+        await using var ctx = _fixture.CreateContext();
+
+        var copy = await DuplicateAsync(ctx, team.Id, source.Id, admin.Id, null);
+
+        Assert.Equal(EmailTemplateLimits.NameMaxLength, copy.Name.Length);
+        Assert.Equal(name[..(EmailTemplateLimits.NameMaxLength - " (copy)".Length)] + " (copy)", copy.Name);
+    }
+
+    [Fact]
+    public async Task DuplicateAsync_GivenName_UsesItTrimmed()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var admin = await _fixture.AddUserAsync("ada@contoso.com");
+        var source = await _fixture.AddTemplateAsync(team.Id, admin.Id, "Welcome");
+        await using var ctx = _fixture.CreateContext();
+
+        var copy = await DuplicateAsync(ctx, team.Id, source.Id, admin.Id, " Welcome back ");
+
+        Assert.Equal("Welcome back", copy.Name);
+    }
+
+    [Fact]
+    public async Task DuplicateAsync_GivenNameTaken_ThrowsConflictAndCopiesNothing()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var admin = await _fixture.AddUserAsync("ada@contoso.com");
+        var source = await _fixture.AddTemplateAsync(team.Id, admin.Id, "Welcome", NewAttachment(AttachmentStatuses.Uploaded));
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<ConflictException>(() => DuplicateAsync(ctx, team.Id, source.Id, admin.Id, "Welcome"));
+
+        await _store.DidNotReceive().CopyAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DuplicateAsync_StoredAndFailedAttachments_CopiesOnlyStoredOnesUnderTheCopy()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var admin = await _fixture.AddUserAsync("ada@contoso.com");
+        var stored = NewAttachment(AttachmentStatuses.Uploaded);
+        var failed = NewAttachment(AttachmentStatuses.Failed);
+        var source = await _fixture.AddTemplateAsync(team.Id, admin.Id, null, stored, failed);
+        await using var ctx = _fixture.CreateContext();
+
+        var copy = await DuplicateAsync(ctx, team.Id, source.Id, admin.Id, null);
+
+        var attachment = Assert.Single(copy.Attachments);
+        Assert.NotEqual(stored.Id, attachment.Id);
+        Assert.Equal(stored.FileName, attachment.FileName);
+        Assert.Equal(AttachmentStatuses.Uploaded, attachment.Status);
+        await using var readCtx = _fixture.CreateContext();
+        var row = await readCtx.EmailTemplateAttachments.SingleAsync(a => a.TemplateId == copy.Id, TestContext.Current.CancellationToken);
+        Assert.Equal($"templates/{copy.Id:N}/{attachment.Id:N}", row.BlobName);
+        await _store.Received(1).CopyAsync(stored.BlobName, row.BlobName, Arg.Any<CancellationToken>());
+        await _store.DidNotReceive().CopyAsync(failed.BlobName, Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(AttachmentStatuses.Pending)]
+    [InlineData(AttachmentStatuses.Uploading)]
+    public async Task DuplicateAsync_AttachmentStillUploading_ThrowsNotReadyAndSavesNothing(AttachmentStatuses status)
+    {
+        var team = await _fixture.AddTeamAsync();
+        var admin = await _fixture.AddUserAsync("ada@contoso.com");
+        var source = await _fixture.AddTemplateAsync(team.Id, admin.Id, null, NewAttachment(status));
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<TemplateNotReadyException>(() => DuplicateAsync(ctx, team.Id, source.Id, admin.Id, null));
+
+        await using var readCtx = _fixture.CreateContext();
+        Assert.Equal(1, await readCtx.EmailTemplates.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task DuplicateAsync_AnotherTeamsTemplate_ThrowsNotFound()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var otherTeam = await _fixture.AddTeamAsync();
+        var admin = await _fixture.AddUserAsync("ada@contoso.com");
+        var source = await _fixture.AddTemplateAsync(otherTeam.Id, admin.Id);
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<NotFoundException>(() => DuplicateAsync(ctx, team.Id, source.Id, admin.Id, null));
+    }
+
+    [Fact]
+    public async Task DuplicateAsync_DocumentGoneFromStorage_DeletesItsDestinationAndSavesNoTemplate()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var admin = await _fixture.AddUserAsync("ada@contoso.com");
+        var stored = NewAttachment(AttachmentStatuses.Uploaded);
+        var source = await _fixture.AddTemplateAsync(team.Id, admin.Id, null, stored);
+        string? destination = null;
+        _store.CopyAsync(stored.BlobName, Arg.Do<string>(d => destination = d), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new BlobNotFoundException(stored.BlobName));
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<NotFoundException>(() => DuplicateAsync(ctx, team.Id, source.Id, admin.Id, null));
+
+        Assert.NotNull(destination);
+        await _store.Received(1).DeleteIfExistsAsync(destination, Arg.Any<CancellationToken>());
+        await using var readCtx = _fixture.CreateContext();
+        Assert.Equal(1, await readCtx.EmailTemplates.CountAsync(TestContext.Current.CancellationToken));
+    }
+
     public void Dispose() => _fixture.Dispose();
 
     // Saves a same-name template through another context just before the service's own save, after its availability check passed.
@@ -232,7 +401,26 @@ public sealed class EmailTemplateServiceTests : IDisposable
 
     #region Private methods
 
-    private static EmailTemplateService CreateService(AndesMailerDbContext ctx) => new(ctx);
+    private static EmailTemplateAttachment NewAttachment(AttachmentStatuses status)
+    {
+        var id = Guid.CreateVersion7();
+
+        return new EmailTemplateAttachment
+        {
+            Id = id,
+            FileName = $"{id:N}.pdf",
+            DocumentTypeId = DocumentTypes.Pdf,
+            ContentType = "application/pdf",
+            SizeBytes = TestFiles.Pdf.Length,
+            BlobName = $"templates/{id:N}",
+            StatusId = status,
+        };
+    }
+
+    private EmailTemplateService CreateService(AndesMailerDbContext ctx) => new(ctx, _store, NullLogger<EmailTemplateService>.Instance);
+
+    private Task<EmailTemplateDto> DuplicateAsync(AndesMailerDbContext ctx, Guid teamId, Guid id, Guid authorId, string? name) =>
+        CreateService(ctx).DuplicateAsync(teamId, id, authorId, new DuplicateEmailTemplateActionDto(name), TestContext.Current.CancellationToken);
 
     private async Task<EmailTemplateDto> CreateTemplateAsync(Guid teamId, Guid authorId, params EmailRecipientActionDto[] recipients)
     {

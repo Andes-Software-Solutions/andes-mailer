@@ -17,6 +17,7 @@ public sealed class RoleGrantConfiguration : IEntityTypeConfiguration<RoleGrant>
         Permissions.CanAttachDocuments,
         Permissions.ViewTeam,
         Permissions.ComposeTeamEmails,
+        Permissions.DuplicateTeamEmails,
     ];
 
     private static readonly Permissions[] _teamAdministratorPermissions =

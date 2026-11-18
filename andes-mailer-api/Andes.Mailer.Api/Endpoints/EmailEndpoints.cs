@@ -36,6 +36,13 @@ internal static class EmailEndpoints
         return TypedResults.Created($"/api/teams/{teamId}/emails/{email.Id}", email);
     }
 
+    private static async Task<Created<EmailDto>> DuplicateEmail(Guid teamId, Guid id, ClaimsPrincipal caller, IEmailService emails, CancellationToken cancellationToken)
+    {
+        var email = await emails.DuplicateAsync(teamId, id, caller.GetCallerId(), cancellationToken);
+
+        return TypedResults.Created($"/api/teams/{teamId}/emails/{email.Id}", email);
+    }
+
     private static async Task<Ok<EmailDto>> UpdateEmail(Guid teamId, Guid id, UpdateEmailActionDto action, IEmailService emails, CancellationToken cancellationToken) =>
         TypedResults.Ok(await emails.UpdateAsync(teamId, id, action, cancellationToken));
 
@@ -87,6 +94,15 @@ internal static class EmailEndpoints
             .WithSummary("Starts a draft email for a team from one of its templates.")
             .WithDescription("Copies the template's subject, body, recipients, and stored attachments. The draft is independent of the template from then on.")
             .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{id:guid}/duplicate", DuplicateEmail)
+            .AddEndpointFilter(new TeamPermissionEndpointFilter(Permissions.DuplicateTeamEmails))
+            .WithName(nameof(DuplicateEmail))
+            .WithSummary("Starts a draft email for a team as a copy of another of its emails.")
+            .WithDescription("Copies the email's subject, body, recipients, and stored attachments. The copy is always a draft, whether or not the source was sent.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);

@@ -1,12 +1,13 @@
 # Email templates
 
-Teams send the same kind of message again and again: a weekly status note to the same distribution list, an announcement with the same attached form. Retyping the subject, body, recipients, and documents each time wastes effort and invites mistakes. A template stores that starting point once, and any member of the team starts a draft from it in one call. This page covers the data model, the `/api/teams/{teamId}/templates` endpoints, how an email is made from a template, and the migration that adds them. For the drafts a template produces, see [Emails and attachments](emails-and-attachments.md). For teams, see [Teams](teams.md). For who may do what, see [Users and permissions](users-and-permissions.md). For how tokens are issued and validated, see [Authentication](authentication.md).
+Teams send the same kind of message again and again: a weekly status note to the same distribution list, an announcement with the same attached form. Retyping the subject, body, recipients, and documents each time wastes effort and invites mistakes. A template stores that starting point once, and any member of the team starts a draft from it in one call. This page covers the data model, the `/api/teams/{teamId}/templates` endpoints, how an email is made from a template, how a template is duplicated, and the migration that adds them. For the drafts a template produces, see [Emails and attachments](emails-and-attachments.md). For teams, see [Teams](teams.md). For who may do what, see [Users and permissions](users-and-permissions.md). For how tokens are issued and validated, see [Authentication](authentication.md).
 
 ## How it fits together
 
 - A **template** belongs to a [team](teams.md). It holds a name, a subject, a sanitized HTML body, a list of recipients, and a list of attachments: everything a draft begins with.
 - **Reading and using** templates is open to every member of the team. **Creating, changing, and deactivating** them, and managing their attachments, needs the new `ManageTeamTemplates` permission, which a `TeamAdministrator` holds and a `TeamMember` does not. A global `Administrator` holds it in every team.
 - Starting an email from a template **copies** it. The draft has its own subject, body, recipients, and its own copy of every document. From then on it is an ordinary draft, and the template can change or disappear without touching it.
+- A team administrator can **duplicate** a template into a new one, with its own copy of every document, to build a variation without starting over. It needs the `DuplicateTeamEmails` permission as well. See [Duplicate a template](#duplicate-a-template).
 - A template's attachments use the same background upload as an email's: the request returns 202, the client polls, and a worker moves the file to Azure Blob Storage. See [The shared upload pipeline](#the-shared-upload-pipeline).
 
 ### Out of scope for now
@@ -64,7 +65,7 @@ The same columns as [`[Core].[EmailAttachment]`](emails-and-attachments.md#coree
 
 | Column | Notes |
 | --- | --- |
-| `BlobName` | `templates/{templateId:N}/{attachmentId:N}`: both ids as 32 hex digits, under a `templates/` prefix in the same `attachments` container as email documents. The prefix means a template's blob name can never equal an email's. |
+| `BlobName` | `templates/{templateId:N}/{attachmentId:N}`: both ids as 32 hex digits, under a `templates/` prefix in the same `attachments` container as email documents. The prefix means a template's blob name can never equal an email's. A duplicated template gets its own copy of each document under its own id. |
 
 ### `[Core].[Email].[TemplateId]`
 
@@ -77,13 +78,16 @@ A nullable foreign key to `[Core].[EmailTemplate]`. It is set when the draft is 
 | List and read templates; read and download their attachments; start an email from a template | `ComposeTeamEmails` |
 | Create, update, and deactivate a template | `ComposeTeamEmails` and `ManageTeamTemplates` |
 | Upload and remove a template attachment | `ComposeTeamEmails`, `ManageTeamTemplates`, and `CanAttachDocuments` |
+| Duplicate a template | `ComposeTeamEmails`, `ManageTeamTemplates`, and `DuplicateTeamEmails` |
 
 `ManageTeamTemplates` (13) is described as "Creates, changes, and deactivates a team's email templates". `TeamAdministrator` and the global `Administrator` hold it; `TeamMember` does not. Both team roles hold `ComposeTeamEmails`, so every member can read and use templates. The grants are in [Users and permissions](users-and-permissions.md#roles-and-permissions).
+
+`DuplicateTeamEmails` (14) is described as "Duplicates a team's emails and email templates" and is held by every role. Duplicating a template creates one, so the route also needs `ManageTeamTemplates`: a `TeamMember` holds the first but not the second and gets a 403, while a `TeamAdministrator` and the global `Administrator` pass. Duplicating an *email* needs only `DuplicateTeamEmails`; see [Duplicate an email](emails-and-attachments.md#duplicate-an-email).
 
 Both the template group and `from-template` run the `ComposeTeamEmails` team check first (see [How team access is checked](teams.md#how-team-access-is-checked)). The consequences:
 
 - A caller who is not in the team, or a team that is missing or deactivated, gets 404. A template in another team returns the same 404 as one that does not exist.
-- A `TeamMember` who calls a write route gets 403, naming the missing permission. The team check ran first, so that member is already in the team and nothing is hidden.
+- A `TeamMember` who calls a write route, including `duplicate`, gets 403, naming the missing permission. The team check ran first, so that member is already in the team and nothing is hidden.
 - A global `Administrator` passes every check for every active team.
 
 ## Endpoints
@@ -98,6 +102,7 @@ All routes need a token with the `access_as_user` scope, like every other endpoi
 | `GET /api/teams/{teamId}/templates/{id}` | None | 200 with the template, its recipients, and its attachments | 403; 404 |
 | `POST /api/teams/{teamId}/templates` | `ManageTeamTemplates` | 201 with the template and a `Location` of `/api/teams/{teamId}/templates/{id}` | 400; 403; 404; 409 if an active template of the team has the name |
 | `PUT /api/teams/{teamId}/templates/{id}` | `ManageTeamTemplates` | 200 with the updated template | 400; 403; 404; 409 if the `version` is stale or another active template has the name |
+| `POST /api/teams/{teamId}/templates/{id}/duplicate` | `ManageTeamTemplates` and `DuplicateTeamEmails` | 201 with the new template and a `Location` of `/api/teams/{teamId}/templates/{id}` | 400 for a missing body or a blank or too-long name; 403; 404; 409 if the name is taken or an attachment is still uploading |
 | `DELETE /api/teams/{teamId}/templates/{id}` | `ManageTeamTemplates` | 204 | 403; 404; 409 if another request changed the template at the same moment |
 
 Listing takes the same `page` (default 1) and `pageSize` (default 25, at most 100) as [`GET /api/users`](users-and-permissions.md#list-users) and returns the same wrapper. Ties in name are broken by id.
@@ -166,6 +171,50 @@ A name clash is a 409 with the message "The team already has a template with thi
 `DELETE /api/teams/{teamId}/templates/{id}` soft-deletes the template by stamping `DateDeactivated`. Its name becomes free for another template. The template, its recipients, and its attachments disappear from every query, and **emails already made from it are untouched**: they keep their content and their own copies of the documents, and their `templateId` still names the deactivated template.
 
 The documents of a deactivated template stay in the `attachments` container, the same way [deleting an email](emails-and-attachments.md#known-limitations) leaves its documents. Remove the template's attachments first if the files must go.
+
+## Duplicate a template
+
+A variation on a template, such as the same weekly note for another list, is quicker to make from a copy than from scratch. Duplicating creates a new template from an existing one.
+
+```http
+POST /api/teams/0199fa10-3c4d-7e21-b6a0-9d8c7b6a5f40/templates/0199fb42-6e0a-7a3d-8f12-4b5c6d7e8f90/duplicate
+Content-Type: application/json
+
+{ "name": "Weekly status (north)" }
+```
+
+The route needs `ComposeTeamEmails`, `ManageTeamTemplates`, and `DuplicateTeamEmails`, so a plain `TeamMember` gets a 403 (see [Permissions](#permissions)). It returns 201 with an [`EmailTemplateDto`](#the-template-object) and a `Location` of `/api/teams/{teamId}/templates/{id}`.
+
+The request needs a body, but `{}` is enough. A missing body is a 400.
+
+| Field | Rule |
+| --- | --- |
+| `name` | Optional. When given, it is trimmed and follows the [name rule](#create-and-update-a-template): not blank, at most 128 characters, unique among the team's active templates. When omitted or `null`, the API picks one. |
+
+**Choosing the name.** Without a `name`, the copy is called `"{Name} (copy)"`. If the team already has that, it tries `"{Name} (copy 2)"`, then `"{Name} (copy 3)"`, and so on until a name is free. Names are compared ignoring case, as the database does. The source name is cut when needed, so the copy's name always fits in 128 characters. A name you give that is already taken is a 409, not a new suffix: the API does not guess when you chose.
+
+What the new template gets:
+
+| Part | What happens |
+| --- | --- |
+| Author | The caller is the `authorId`. |
+| Subject and body | Copied as stored. |
+| Recipients | Copied with the same header and order. A template keeps addresses only, so there is nothing to resolve and no Graph call. |
+| Attachments | Each `Uploaded` attachment is copied inside storage to a new attachment row with status `Uploaded` and the blob name `templates/{templateId:N}/{attachmentId:N}`. `Failed` attachments are left out. The copies are ready at once, so there is nothing to poll. |
+
+The copy is independent: later changes to either template never reach the other, and removing a document from one never deletes the other's.
+
+| Status | When |
+| --- | --- |
+| 201 | The template was created. |
+| 400 | The body is missing, or `name` is blank or longer than 128 characters. |
+| 403 | The caller lacks `ManageTeamTemplates` or `DuplicateTeamEmails` in the team, as a `TeamMember` does. |
+| 404 | The team is missing or the caller is not in it, or the team has no active template with the id (another team's template gives the same answer), or storage no longer holds one of the template's documents. |
+| 409 | The name is taken ("The team already has a template with this name."), or one of the source's attachments is `Pending` or `Uploading` (`TemplateNotReadyException`, the same message as for [from-template](#when-a-template-is-not-ready)). |
+
+Copying uses the order and cleanup rules in [When the save fails](#when-the-save-fails): the documents are copied first, then the template and its rows are saved together, and the copies are deleted if anything fails before the save commits. The code is shared with [duplicating an email](emails-and-attachments.md#duplicate-an-email) and with `from-template` (`AttachmentCopy`, in `Andes.Mailer.Service/Emails/Attachments/`).
+
+The permission arrives in the migration `*_AddDuplicateTeamEmailsPermission.cs`, which only adds the permission and its grants. Apply it as described in [Run it locally](#run-it-locally).
 
 ## Template attachments
 
@@ -289,6 +338,8 @@ Apply it with the command above. No data needs moving. The new permission takes 
 | 403 on a template write | You are in the team, but your role lacks `ManageTeamTemplates` (or `CanAttachDocuments`). | Hide the edit actions for a `TeamMember`. |
 | 409 on `POST` or `PUT` | The name is taken, or the `version` is stale. | Read the template again; if the message names the name, ask for another. |
 | 409 on `from-template` | A template attachment is still uploading. | Say so, and offer to retry shortly. |
+| 409 on `duplicate` | The name you gave is taken, or an attachment is still uploading. | Read the message; ask for another name, or retry shortly. |
+| 403 on `duplicate` | You are in the team, but your role lacks `ManageTeamTemplates`. | Hide the duplicate action for a `TeamMember`. |
 | 404 on `from-template` | The template is gone, or one of its documents is missing from storage. | Read the message; a missing document is for a team administrator to fix. |
 
 ## Known limitations
@@ -296,8 +347,8 @@ Apply it with the command above. No data needs moving. The new permission takes 
 - **No UI.** The UI has no template screens yet.
 - **No template reactivation.** Deactivating a template is one-way through the API. Its rows remain, so a developer can clear `DateDeactivated` in SQL, but nothing in the API does it.
 - **Deactivating a template leaves its documents in storage.** Remove its attachments first if the files must go.
-- **A leftover copy can stay in storage.** If an email made from a template fails and the cleanup of its copies also fails, or the API cannot tell whether the save landed, the copies stay in the `attachments` container.
-- **`from-template` is not instant for large templates.** It waits for each document to be copied, one after another, before it answers.
+- **A leftover copy can stay in storage.** If an email made from a template, or a duplicated template, fails and the cleanup of its copies also fails, or the API cannot tell whether the save landed, the copies stay in the `attachments` container.
+- **`from-template` and `duplicate` are not instant for large templates.** They wait for each document to be copied, one after another, before they answer.
 - **Recipient names come from the moment of copying.** The template stores addresses only; the draft's `userId` and `displayName` are set when it is created and do not refresh, as with any [draft](emails-and-attachments.md#known-limitations).
 - **Graph failures return 500.** A Graph outage surfaces as a 500 from `from-template`, because the recipients are resolved then. Saving a template does not call Graph.
 - **A single instance only.** The upload pipeline is shared, so it has the same [scaling limit](emails-and-attachments.md#scaling-out).
