@@ -1,7 +1,5 @@
 import { mergeApplicationConfig } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
-import { createStandardPublicClientApplication } from '@azure/msal-browser';
-import { MSAL_INSTANCE, buildMsalConfig } from '@core/auth/msal-instance-token';
 import { completeRedirect, isRedirectUrl } from '@core/auth/redirect-bridge';
 import { APP_CONFIG } from '@core/config/app-config-token';
 import { loadAppConfig } from '@core/config/load-app-config';
@@ -19,16 +17,10 @@ async function start(): Promise<void> {
 
   const config = await loadAppConfig(baseUri);
 
-  // Before bootstrap, because no DI factory can await MSAL's initialization.
-  const msal = await createStandardPublicClientApplication(buildMsalConfig(config, baseUri));
-
   await bootstrapApplication(
     App,
     mergeApplicationConfig(appConfig, {
-      providers: [
-        { provide: APP_CONFIG, useValue: config },
-        { provide: MSAL_INSTANCE, useValue: msal },
-      ],
+      providers: [{ provide: APP_CONFIG, useValue: config }],
     }),
   );
 }
