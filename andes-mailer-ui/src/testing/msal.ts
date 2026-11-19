@@ -1,21 +1,37 @@
-import { Provider } from '@angular/core';
+import { EnvironmentProviders, Provider } from '@angular/core';
+import { MSAL_INSTANCE } from '@azure/msal-angular';
 import {
   AccountInfo,
   AuthenticationResult,
+  EventCallbackFunction,
   IPublicClientApplication,
+  Logger,
   stubbedPublicClientApplication,
 } from '@azure/msal-browser';
-import { MSAL_INSTANCE } from '../app/core/auth/msal-instance-token';
+import { provideMsal } from '../app/core/auth/provide-msal';
 import { testApiScope } from './app-config';
 
 /**
  * Spreads msal-browser's `stubbedPublicClientApplication`, whose methods all reject, so an
- * unstubbed call fails with a named MSAL error. jsdom cannot run a real one.
+ * unstubbed call fails with a named MSAL error. jsdom cannot run a real one. What MSAL Angular
+ * calls on every use (initialize, logger, active account) works.
  */
 export function fakeMsalInstance(
   overrides: Partial<IPublicClientApplication> = {},
 ): IPublicClientApplication {
-  return { ...stubbedPublicClientApplication, ...overrides };
+  let activeAccount: AccountInfo | null = null;
+  const logger = new Logger({});
+
+  return {
+    ...stubbedPublicClientApplication,
+    initialize: () => Promise.resolve(),
+    getLogger: () => logger,
+    getActiveAccount: () => activeAccount,
+    setActiveAccount: (account) => {
+      activeAccount = account;
+    },
+    ...overrides,
+  };
 }
 
 export function fakeAccount(overrides: Partial<AccountInfo> = {}): AccountInfo {
@@ -75,6 +91,26 @@ export function signedInMsal(
   });
 }
 
-export function provideFakeMsal(instance: IPublicClientApplication): Provider {
-  return { provide: MSAL_INSTANCE, useValue: instance };
+/** Captures what MSAL Angular registers through `addEventCallback`, so a spec can raise events. */
+export function eventCallbacks(): {
+  readonly callbacks: EventCallbackFunction[];
+  readonly addEventCallback: IPublicClientApplication['addEventCallback'];
+} {
+  const callbacks: EventCallbackFunction[] = [];
+
+  return {
+    callbacks,
+    addEventCallback: (callback) => {
+      callbacks.push(callback);
+
+      return String(callbacks.length);
+    },
+  };
+}
+
+/** The app's real MSAL Angular wiring, around a fake instance. Needs `provideTestAppConfig()`. */
+export function provideFakeMsal(
+  instance: IPublicClientApplication,
+): (Provider | EnvironmentProviders)[] {
+  return [...provideMsal(), { provide: MSAL_INSTANCE, useValue: instance }];
 }

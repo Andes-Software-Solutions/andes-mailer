@@ -6,7 +6,7 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { IPublicClientApplication } from '@azure/msal-browser';
 import { LoginFailed } from '@features/auth/login-failed';
 import { Home } from '@features/home/home';
-import { provideTestAppConfig } from '@testing/app-config';
+import { provideTestAppConfig, testApiScope } from '@testing/app-config';
 import { provideFakeMsal, signedInMsal, signedOutMsal } from '@testing/msal';
 import { vi } from 'vitest';
 import { routes } from './app.routes';
@@ -30,6 +30,10 @@ describe('routes', () => {
     sessionStorage.clear();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('sends a signed-out visitor to Entra instead of opening home', async () => {
     const loginRedirect = vi.fn(() => Promise.resolve());
     const harness = await setup(signedOutMsal({ loginRedirect }));
@@ -37,6 +41,7 @@ describe('routes', () => {
     await harness.navigateByUrl('/');
 
     expect(loginRedirect).toHaveBeenCalledTimes(1);
+    expect(loginRedirect).toHaveBeenCalledWith(expect.objectContaining({ scopes: [testApiScope] }));
     expect(harness.routeDebugElement).toBeNull();
   });
 
@@ -44,6 +49,15 @@ describe('routes', () => {
     const harness = await setup(signedInMsal());
 
     await expect(harness.navigateByUrl('/', Home)).resolves.toBeInstanceOf(Home);
+  });
+
+  it('sends a sign-in that came back failed to the failure page', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = await setup(
+      signedOutMsal({ handleRedirectPromise: () => Promise.reject(new Error('access_denied')) }),
+    );
+
+    await expect(harness.navigateByUrl('/', LoginFailed)).resolves.toBeInstanceOf(LoginFailed);
   });
 
   it('never guards the failure page, which would send the user straight back to Entra', async () => {
