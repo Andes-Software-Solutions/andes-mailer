@@ -47,6 +47,8 @@ public sealed partial class EmailDispatchProcessor(
     private const string DeactivatedReason = "The email or its team was deactivated before it could be sent.";
     private const string InterruptedReason = "Sending was interrupted too many times.";
 
+    private static readonly TimeSpan _maxWait = TimeSpan.FromDays(1);
+
     private readonly IServiceScopeFactory _scopes = scopes;
     private readonly EmailDispatchSignal _signal = signal;
     private readonly TimeProvider _time = time;
@@ -77,11 +79,15 @@ public sealed partial class EmailDispatchProcessor(
                 continue;
             }
 
+            // Capped because WaitAsync rejects a timeout of about 49.7 days or more; waking early only runs a harmless extra dispatch.
+            var untilNext = next.Value - now;
+            var wait = untilNext < _maxWait ? untilNext : _maxWait;
+
             // The read is cancelled once the scheduled time wins, so no abandoned reader is left to swallow the next wake-up.
             using var wake = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             try
             {
-                await _signal.WaitAsync(wake.Token).WaitAsync(next.Value - now, _time, stoppingToken);
+                await _signal.WaitAsync(wake.Token).WaitAsync(wait, _time, stoppingToken);
             }
             catch (TimeoutException)
             {

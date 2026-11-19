@@ -79,6 +79,9 @@ public sealed class GraphMailboxClient(GraphServiceClient graph, IAttachmentStor
     // Outlook accepts at most 4 MB per upload-session request.
     private const int UploadSliceBytes = 3 * 1024 * 1024;
 
+    // The Exchange code for a message id that does not resolve in a mailbox that exists.
+    private const string MessageNotFoundCode = "ErrorItemNotFound";
+
     private static readonly TimeSpan _defaultThrottleDelay = TimeSpan.FromMinutes(1);
 
     private readonly GraphServiceClient _graph = graph;
@@ -155,9 +158,10 @@ public sealed class GraphMailboxClient(GraphServiceClient graph, IAttachmentStor
 
             return message?.IsDraft == true;
         }
-        catch (MailboxException ex) when (ex.InnerException is ApiException { ResponseStatusCode: (int)HttpStatusCode.NotFound })
+        catch (MailboxException ex) when (IsMessageNotFound(ex))
         {
-            // Sending moves the draft to Sent Items under a new id, so the draft's own id no longer resolves.
+            // Sending moves the draft to Sent Items under a new id, so the draft's own id no longer resolves. Only a missing message
+            // counts: a 404 for a deleted or unlicensed mailbox says nothing about the draft, so it stays a failure and the caller keeps the id.
             return false;
         }
     }
@@ -178,13 +182,16 @@ public sealed class GraphMailboxClient(GraphServiceClient graph, IAttachmentStor
                 },
                 cancellationToken);
         }
-        catch (MailboxException ex) when (ex.InnerException is ApiException { ResponseStatusCode: (int)HttpStatusCode.NotFound })
+        catch (MailboxException ex) when (IsMessageNotFound(ex))
         {
             // Already gone, which is what was asked for.
         }
     }
 
     #region Private methods
+
+    private static bool IsMessageNotFound(MailboxException exception) =>
+        exception.InnerException is ODataError { ResponseStatusCode: (int)HttpStatusCode.NotFound, Error.Code: MessageNotFoundCode };
 
     private async Task DeleteDraftBestEffortAsync(Guid mailboxId, string messageId)
     {

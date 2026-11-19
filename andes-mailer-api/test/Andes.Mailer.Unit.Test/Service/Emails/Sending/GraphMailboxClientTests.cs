@@ -129,6 +129,19 @@ public sealed class GraphMailboxClientTests
     }
 
     [Theory]
+    [InlineData("ErrorInvalidUser")]
+    [InlineData("MailboxNotEnabledForRESTAPI")]
+    [InlineData("Request_ResourceNotFound")]
+    public async Task DraftExistsAsync_MailboxNotFound_ThrowsRatherThanAnsweringSent(string code)
+    {
+        using var handler = new ScriptedHttpMessageHandler(_ => ScriptedHttpMessageHandler.Json(HttpStatusCode.NotFound, $$"""{ "error": { "code": "{{code}}", "message": "Not found." } }"""));
+
+        var exception = await Assert.ThrowsAsync<MailboxException>(() => CreateClient(handler).DraftExistsAsync(_mailboxId, MessageId, TestContext.Current.CancellationToken));
+
+        Assert.Equal(MailboxFailureKinds.Permanent, exception.Kind);
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.TooManyRequests, MailboxFailureKinds.Throttled)]
     [InlineData(HttpStatusCode.ServiceUnavailable, MailboxFailureKinds.Throttled)]
     [InlineData(HttpStatusCode.InternalServerError, MailboxFailureKinds.Transient)]

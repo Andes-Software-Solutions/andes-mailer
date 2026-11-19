@@ -440,6 +440,76 @@ public sealed class EmailDispatchProcessorTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task DispatchOnceAsync_DraftMailboxGone_FailsAndKeepsTheDraftIdWithoutSending()
+    {
+        // The team retired its old mailbox and someone retried: the old mailbox's 404 must not read as "sent".
+        var email = await SeedAsync(EmailStatuses.Sending, "ada@contoso.com");
+        var oldMailbox = Guid.NewGuid();
+        await UpdateDeliveryAsync(email.Id, d =>
+        {
+            d.GraphMessageId = "draft-old";
+            d.DraftMailboxId = oldMailbox;
+        });
+        _mailbox.DraftExistsAsync(oldMailbox, "draft-old", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new MailboxException(MailboxFailureKinds.Permanent, "The mail server rejected the message (ErrorInvalidUser)."));
+
+        await CreateProcessor().DispatchOnceAsync(TestContext.Current.CancellationToken);
+
+        var delivery = Assert.Single(await ReadDeliveriesAsync(email.Id));
+        Assert.Equal(DeliveryStatuses.Failed, delivery.StatusId);
+        Assert.Null(delivery.DateSent);
+        Assert.Equal("draft-old", delivery.GraphMessageId);
+        Assert.Equal(oldMailbox, delivery.DraftMailboxId);
+        await _mailbox.DidNotReceive().CreateDraftAsync(Arg.Any<Guid>(), Arg.Any<OutgoingMessage>(), Arg.Any<CancellationToken>());
+        await _mailbox.DidNotReceive().SendDraftAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _mailbox.DidNotReceive().DeleteDraftAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DispatchOnceAsync_CheckOnlyClaimRanOut_FailsWithoutAnotherClaim()
+    {
+        var email = await SeedAsync(EmailStatuses.Sending, "ada@contoso.com");
+        await UpdateDeliveryAsync(email.Id, d =>
+        {
+            d.StatusId = DeliveryStatuses.Sending;
+            d.AttemptCount = 4;
+            d.LeaseExpiresAt = _fixture.Time.GetUtcNow().AddSeconds(-1);
+            d.GraphMessageId = "draft-interrupted";
+        });
+
+        await CreateProcessor().DispatchOnceAsync(TestContext.Current.CancellationToken);
+
+        var delivery = Assert.Single(await ReadDeliveriesAsync(email.Id));
+        Assert.Equal(DeliveryStatuses.Failed, delivery.StatusId);
+        Assert.Equal(4, delivery.AttemptCount);
+        Assert.Equal("Sending was interrupted too many times.", delivery.LastError);
+        Assert.Equal("draft-interrupted", delivery.GraphMessageId);
+        Assert.Null(delivery.LeaseExpiresAt);
+        await _mailbox.DidNotReceive().DraftExistsAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _mailbox.DidNotReceive().CreateDraftAsync(Arg.Any<Guid>(), Arg.Any<OutgoingMessage>(), Arg.Any<CancellationToken>());
+        await _mailbox.DidNotReceive().SendDraftAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        Assert.Equal(EmailStatuses.Failed, (await ReadEmailAsync(email.Id)).StatusId);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ScheduleMonthsApart_KeepsRunningAndStillWakesOnSignal()
+    {
+        // Once a year: the next run is far beyond the longest timeout WaitAsync accepts.
+        using var processor = CreateProcessor(schedule: "0 0 1 1 *");
+        await processor.StartAsync(TestContext.Current.CancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken);
+
+        var email = await SeedAsync(EmailStatuses.Sending, "ada@contoso.com");
+        _signal.Notify();
+        var sent = await WaitForAsync(email.Id, DeliveryStatuses.Sent);
+        var faulted = processor.ExecuteTask?.IsFaulted;
+        await processor.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(DeliveryStatuses.Sent, sent);
+        Assert.False(faulted);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Started_RunsAtOnceWithoutWaitingForTheSchedule()
     {
         var email = await SeedAsync(EmailStatuses.Sending, "ada@contoso.com");
@@ -489,12 +559,12 @@ public sealed class EmailDispatchProcessorTests : IAsyncDisposable
 
     #region Private methods
 
-    private EmailDispatchProcessor CreateProcessor(bool enabled = true, int maxPerMailboxPerRun = 30) =>
+    private EmailDispatchProcessor CreateProcessor(bool enabled = true, int maxPerMailboxPerRun = 30, string schedule = "* * * * *") =>
         new(
             _services.GetRequiredService<IServiceScopeFactory>(),
             _signal,
             _fixture.Time,
-            Microsoft.Extensions.Options.Options.Create(new EmailSendingOptions { Enabled = enabled, MaxPerMailboxPerRun = maxPerMailboxPerRun }),
+            Microsoft.Extensions.Options.Options.Create(new EmailSendingOptions { Enabled = enabled, MaxPerMailboxPerRun = maxPerMailboxPerRun, Schedule = schedule }),
             NullLogger<EmailDispatchProcessor>.Instance);
 
     private Task<Email> SeedAsync(EmailStatuses status, params string[] addresses) =>
