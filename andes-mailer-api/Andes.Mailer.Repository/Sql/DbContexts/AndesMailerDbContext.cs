@@ -65,6 +65,11 @@ public sealed class AndesMailerDbContext(DbContextOptions<AndesMailerDbContext> 
     public DbSet<EmailAttachment> EmailAttachments => Set<EmailAttachment>();
 
     /// <summary>
+    /// Gets the deliveries of emails to their recipients.
+    /// </summary>
+    public DbSet<EmailDelivery> EmailDeliveries => Set<EmailDelivery>();
+
+    /// <summary>
     /// Gets the email templates.
     /// </summary>
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();

@@ -6,6 +6,7 @@ using Andes.Mailer.Dto.Actions.Emails;
 using Andes.Mailer.Dto.Emails;
 using Andes.Mailer.Dto.Pagination;
 using Andes.Mailer.Service.Emails;
+using Andes.Mailer.Service.Emails.Sending;
 using Andes.Mailer.Service.Security;
 
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -52,6 +53,27 @@ internal static class EmailEndpoints
 
         return TypedResults.NoContent();
     }
+
+    // Accepted, not Ok: the deliveries go out in the background, and the Location is where the client polls their progress.
+    private static async Task<Accepted<EmailDto>> SendEmail(Guid teamId, Guid id, SendEmailActionDto action, ClaimsPrincipal caller, IEmailSendService sending, CancellationToken cancellationToken)
+    {
+        var email = await sending.SendAsync(teamId, id, caller.GetCallerId(), action, cancellationToken);
+
+        return TypedResults.Accepted($"/api/teams/{teamId}/emails/{email.Id}/deliveries", email);
+    }
+
+    private static async Task<Ok<EmailDto>> UnscheduleEmail(Guid teamId, Guid id, EmailVersionActionDto action, IEmailSendService sending, CancellationToken cancellationToken) =>
+        TypedResults.Ok(await sending.UnscheduleAsync(teamId, id, action, cancellationToken));
+
+    private static async Task<Accepted<EmailDto>> RetryEmail(Guid teamId, Guid id, EmailVersionActionDto action, IEmailSendService sending, CancellationToken cancellationToken)
+    {
+        var email = await sending.RetryFailedAsync(teamId, id, action, cancellationToken);
+
+        return TypedResults.Accepted($"/api/teams/{teamId}/emails/{email.Id}/deliveries", email);
+    }
+
+    private static async Task<Ok<IReadOnlyList<EmailDeliveryDto>>> ListEmailDeliveries(Guid teamId, Guid id, IEmailSendService sending, CancellationToken cancellationToken) =>
+        TypedResults.Ok(await sending.ListDeliveriesAsync(teamId, id, cancellationToken));
 
     #endregion
 
@@ -122,6 +144,46 @@ internal static class EmailEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{id:guid}/send", SendEmail)
+            .AddEndpointFilter(new TeamPermissionEndpointFilter(Permissions.SendTeamEmails))
+            .AddEndpointFilter<ValidationEndpointFilter<SendEmailActionDto>>()
+            .WithName(nameof(SendEmail))
+            .WithSummary("Sends one of a team's drafts now, or schedules it for later.")
+            .WithDescription("Each recipient gets a message of their own from the team's service mailbox, sent in the background. Poll the deliveries for progress.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{id:guid}/unschedule", UnscheduleEmail)
+            .AddEndpointFilter(new TeamPermissionEndpointFilter(Permissions.SendTeamEmails))
+            .AddEndpointFilter<ValidationEndpointFilter<EmailVersionActionDto>>()
+            .WithName(nameof(UnscheduleEmail))
+            .WithSummary("Returns one of a team's scheduled emails to a draft.")
+            .WithDescription("Allowed only until the dispatcher picks up the first recipient.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{id:guid}/retry", RetryEmail)
+            .AddEndpointFilter(new TeamPermissionEndpointFilter(Permissions.SendTeamEmails))
+            .AddEndpointFilter<ValidationEndpointFilter<EmailVersionActionDto>>()
+            .WithName(nameof(RetryEmail))
+            .WithSummary("Sends one of a team's emails again to the recipients it failed for.")
+            .WithDescription("Each failed recipient gets a fresh set of attempts; recipients already sent are never sent again.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        // Only the team check of the group: every member can follow an email's progress.
+        group.MapGet("/{id:guid}/deliveries", ListEmailDeliveries)
+            .WithName(nameof(ListEmailDeliveries))
+            .WithSummary("Lists the deliveries of one of a team's emails, one per recipient.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
 
         return app;
     }

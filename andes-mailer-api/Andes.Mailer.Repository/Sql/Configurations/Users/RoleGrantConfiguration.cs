@@ -28,6 +28,7 @@ public sealed class RoleGrantConfiguration : IEntityTypeConfiguration<RoleGrant>
         Permissions.DeactivateTeamUser,
         Permissions.ManageTeamTemplates,
         Permissions.ManageTeamContactGroups,
+        Permissions.SendTeamEmails,
     ];
 
     /// <inheritdoc/>

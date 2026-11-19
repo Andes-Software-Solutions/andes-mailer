@@ -14,8 +14,32 @@ public enum EmailStatuses
     Draft = 1,
 
     /// <summary>
-    /// Sent; it can no longer change.
+    /// Sent to every recipient; it can no longer change.
     /// </summary>
-    [Description("Sent; reserved until sending is built")]
+    [Description("Sent to every recipient")]
     Sent = 2,
+
+    /// <summary>
+    /// Waiting for its scheduled time; it can return to a draft until a recipient is picked up.
+    /// </summary>
+    [Description("Waiting for its scheduled time")]
+    Scheduled = 3,
+
+    /// <summary>
+    /// Being delivered to its recipients.
+    /// </summary>
+    [Description("Being delivered to its recipients")]
+    Sending = 4,
+
+    /// <summary>
+    /// Finished; some recipients received it and the rest failed.
+    /// </summary>
+    [Description("Sent to some recipients; the rest failed")]
+    PartiallySent = 5,
+
+    /// <summary>
+    /// Finished; no recipient received it.
+    /// </summary>
+    [Description("No recipient received it")]
+    Failed = 6,
 }

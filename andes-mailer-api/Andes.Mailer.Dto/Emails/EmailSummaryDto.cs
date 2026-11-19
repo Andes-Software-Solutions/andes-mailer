@@ -14,6 +14,9 @@ namespace Andes.Mailer.Dto.Emails;
 /// <param name="AttachmentCount">The number of attachments, including any still uploading or failed.</param>
 /// <param name="DateCreated">The moment the email was created.</param>
 /// <param name="DateModified">The moment the email last changed, or <see langword="null"/> if never.</param>
+/// <param name="ScheduledFor">When the email is to be sent, or <see langword="null"/> for an email sent at once or not yet sent.</param>
+/// <param name="DateCompleted">The moment the last delivery finished, or <see langword="null"/> until every delivery is sent or has failed.</param>
+/// <param name="Deliveries">The deliveries counted by outcome; all zero for a draft.</param>
 public sealed record EmailSummaryDto(
     Guid Id,
     Guid AuthorId,
@@ -23,4 +26,7 @@ public sealed record EmailSummaryDto(
     int RecipientCount,
     int AttachmentCount,
     DateTimeOffset DateCreated,
-    DateTimeOffset? DateModified);
+    DateTimeOffset? DateModified,
+    DateTimeOffset? ScheduledFor,
+    DateTimeOffset? DateCompleted,
+    EmailDeliverySummaryDto Deliveries);

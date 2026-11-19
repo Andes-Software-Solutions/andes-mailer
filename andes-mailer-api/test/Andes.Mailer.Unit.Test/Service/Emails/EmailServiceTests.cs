@@ -167,6 +167,22 @@ public sealed class EmailServiceTests : IDisposable
         Assert.False(await readCtx.EmailRecipients.AnyAsync(r => r.EmailId == created.Id, TestContext.Current.CancellationToken));
     }
 
+    [Theory]
+    [InlineData(EmailStatuses.Scheduled)]
+    [InlineData(EmailStatuses.Sending)]
+    public async Task DeleteAsync_ScheduledOrSending_ThrowsNotDeletableAndKeepsIt(EmailStatuses status)
+    {
+        var team = await _fixture.AddTeamAsync();
+        var author = await _fixture.AddUserAsync("ada@contoso.com");
+        var email = await _fixture.AddEmailAsync(team.Id, author.Id, status);
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<EmailNotDeletableException>(() => CreateService(ctx).DeleteAsync(team.Id, email.Id, TestContext.Current.CancellationToken));
+
+        await using var readCtx = _fixture.CreateContext();
+        Assert.True(await readCtx.Emails.AnyAsync(e => e.Id == email.Id, TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public async Task ListAsync_TeamEmails_ReturnsEveryAuthorsOfTheTeamOnlyMostRecentFirst()
     {

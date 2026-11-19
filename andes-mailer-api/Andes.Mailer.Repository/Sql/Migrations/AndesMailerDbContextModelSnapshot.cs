@@ -184,6 +184,54 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.DeliveryStatus", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("DeliveryStatus", "Core.Ref");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Description = "Waiting for its next attempt",
+                            Name = "Pending"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Description = "Being sent",
+                            Name = "Sending"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Description = "Accepted by the mail server",
+                            Name = "Sent"
+                        },
+                        new
+                        {
+                            Id = 4,
+                            Description = "Every attempt failed",
+                            Name = "Failed"
+                        });
+                });
+
             modelBuilder.Entity("Andes.Mailer.Entity.Emails.DocumentType", b =>
                 {
                     b.Property<int>("Id")
@@ -263,6 +311,9 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTimeOffset?>("DateCompleted")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset>("DateCreated")
                         .HasColumnType("datetimeoffset");
 
@@ -271,6 +322,15 @@ namespace Andes.Mailer.Repository.Sql.Migrations
 
                     b.Property<DateTimeOffset?>("DateModified")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateSendRequested")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ScheduledFor")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("SentById")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("StatusId")
                         .HasColumnType("int");
@@ -298,9 +358,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
 
                     b.HasIndex("DateDeactivated");
 
-                    b.HasIndex("StatusId");
+                    b.HasIndex("SentById");
 
                     b.HasIndex("TemplateId");
+
+                    b.HasIndex("StatusId", "ScheduledFor");
 
                     b.HasIndex("TeamId", "StatusId");
 
@@ -377,6 +439,73 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.ToTable("EmailAttachment", "Core");
                 });
 
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.EmailDelivery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("DateCreated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateDeactivated")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateModified")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DateSent")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("DraftMailboxId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EmailId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("GraphMessageId")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("RecipientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("StatusId")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DateDeactivated");
+
+                    b.HasIndex("RecipientId");
+
+                    b.HasIndex("EmailId", "RecipientId")
+                        .IsUnique();
+
+                    b.HasIndex("StatusId", "NextAttemptAt");
+
+                    b.ToTable("EmailDelivery", "Core");
+                });
+
             modelBuilder.Entity("Andes.Mailer.Entity.Emails.EmailRecipient", b =>
                 {
                     b.Property<Guid>("Id")
@@ -445,8 +574,32 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         new
                         {
                             Id = 2,
-                            Description = "Sent; reserved until sending is built",
+                            Description = "Sent to every recipient",
                             Name = "Sent"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Description = "Waiting for its scheduled time",
+                            Name = "Scheduled"
+                        },
+                        new
+                        {
+                            Id = 4,
+                            Description = "Being delivered to its recipients",
+                            Name = "Sending"
+                        },
+                        new
+                        {
+                            Id = 5,
+                            Description = "Sent to some recipients; the rest failed",
+                            Name = "PartiallySent"
+                        },
+                        new
+                        {
+                            Id = 6,
+                            Description = "No recipient received it",
+                            Name = "Failed"
                         });
                 });
 
@@ -861,6 +1014,12 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                             Id = 15,
                             Description = "Creates, changes, and deactivates a team's contact groups",
                             Name = "ManageTeamContactGroups"
+                        },
+                        new
+                        {
+                            Id = 16,
+                            Description = "Sends or schedules a team's emails",
+                            Name = "SendTeamEmails"
                         });
                 });
 
@@ -998,6 +1157,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         },
                         new
                         {
+                            RoleId = 1,
+                            PermissionId = 16
+                        },
+                        new
+                        {
                             RoleId = 2,
                             PermissionId = 7
                         },
@@ -1040,6 +1204,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         {
                             RoleId = 2,
                             PermissionId = 15
+                        },
+                        new
+                        {
+                            RoleId = 2,
+                            PermissionId = 16
                         },
                         new
                         {
@@ -1179,6 +1348,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Andes.Mailer.Entity.Users.User", "SentBy")
+                        .WithMany()
+                        .HasForeignKey("SentById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Andes.Mailer.Entity.Emails.EmailStatus", "Status")
                         .WithMany()
                         .HasForeignKey("StatusId")
@@ -1197,6 +1371,8 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Author");
+
+                    b.Navigation("SentBy");
 
                     b.Navigation("Status");
 
@@ -1228,6 +1404,33 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.Navigation("DocumentType");
 
                     b.Navigation("Email");
+
+                    b.Navigation("Status");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Emails.EmailDelivery", b =>
+                {
+                    b.HasOne("Andes.Mailer.Entity.Emails.Email", "Email")
+                        .WithMany("Deliveries")
+                        .HasForeignKey("EmailId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Emails.EmailRecipient", "Recipient")
+                        .WithMany()
+                        .HasForeignKey("RecipientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Andes.Mailer.Entity.Emails.DeliveryStatus", "Status")
+                        .WithMany()
+                        .HasForeignKey("StatusId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Email");
+
+                    b.Navigation("Recipient");
 
                     b.Navigation("Status");
                 });
@@ -1389,6 +1592,8 @@ namespace Andes.Mailer.Repository.Sql.Migrations
             modelBuilder.Entity("Andes.Mailer.Entity.Emails.Email", b =>
                 {
                     b.Navigation("Attachments");
+
+                    b.Navigation("Deliveries");
 
                     b.Navigation("Recipients");
                 });

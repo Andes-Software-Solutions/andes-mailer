@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 
+using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Emails;
 using Andes.Mailer.Entity.Emails;
 
@@ -35,7 +36,15 @@ public static class EmailMapper
             .ToList(),
         email.DateCreated,
         email.DateModified,
-        Convert.ToBase64String(email.Version));
+        Convert.ToBase64String(email.Version),
+        email.ScheduledFor,
+        email.SentById,
+        email.DateSendRequested,
+        email.DateCompleted,
+        new EmailDeliverySummaryDto(
+            email.Deliveries.Count(d => d.StatusId == DeliveryStatuses.Pending || d.StatusId == DeliveryStatuses.Sending),
+            email.Deliveries.Count(d => d.StatusId == DeliveryStatuses.Sent),
+            email.Deliveries.Count(d => d.StatusId == DeliveryStatuses.Failed)));
 
     /// <summary>
     /// Gets the projection that maps an email to an <see cref="EmailSummaryDto"/> inside a query.
@@ -49,7 +58,13 @@ public static class EmailMapper
         email.Recipients.Count,
         email.Attachments.Count,
         email.DateCreated,
-        email.DateModified);
+        email.DateModified,
+        email.ScheduledFor,
+        email.DateCompleted,
+        new EmailDeliverySummaryDto(
+            email.Deliveries.Count(d => d.StatusId == DeliveryStatuses.Pending || d.StatusId == DeliveryStatuses.Sending),
+            email.Deliveries.Count(d => d.StatusId == DeliveryStatuses.Sent),
+            email.Deliveries.Count(d => d.StatusId == DeliveryStatuses.Failed)));
 
     /// <summary>
     /// Gets the projection that maps an attachment to an <see cref="EmailAttachmentDto"/> inside a query.
@@ -93,7 +108,29 @@ public static class EmailMapper
                 .Select(MapToEmailAttachmentDto)],
             email.DateCreated,
             email.DateModified,
-            Convert.ToBase64String(email.Version));
+            Convert.ToBase64String(email.Version),
+            email.ScheduledFor,
+            email.SentById,
+            email.DateSendRequested,
+            email.DateCompleted,
+            MapToEmailDeliverySummaryDto(email.Deliveries));
+    }
+
+    /// <summary>
+    /// Counts loaded deliveries by outcome.
+    /// </summary>
+    /// <param name="deliveries">The deliveries; an email whose deliveries are not loaded counts as having none.</param>
+    /// <returns>The DTO.</returns>
+    public static EmailDeliverySummaryDto MapToEmailDeliverySummaryDto(IEnumerable<EmailDelivery> deliveries)
+    {
+        ArgumentNullException.ThrowIfNull(deliveries);
+
+        var active = deliveries.Where(d => d.DateDeactivated is null).ToList();
+
+        return new EmailDeliverySummaryDto(
+            active.Count(d => d.StatusId is DeliveryStatuses.Pending or DeliveryStatuses.Sending),
+            active.Count(d => d.StatusId == DeliveryStatuses.Sent),
+            active.Count(d => d.StatusId == DeliveryStatuses.Failed));
     }
 
     /// <summary>

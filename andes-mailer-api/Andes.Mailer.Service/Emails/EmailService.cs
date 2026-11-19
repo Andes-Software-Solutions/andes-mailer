@@ -106,6 +106,7 @@ public interface IEmailService
     /// <param name="cancellationToken">A token that cancels the operation.</param>
     /// <returns>A task that completes when the email is deactivated.</returns>
     /// <exception cref="NotFoundException">The team has no active email with the id.</exception>
+    /// <exception cref="EmailNotDeletableException">The email is scheduled or sending.</exception>
     /// <exception cref="ConflictException">The email changed during the operation.</exception>
     Task DeleteAsync(Guid teamId, Guid id, CancellationToken cancellationToken);
 }
@@ -309,6 +310,10 @@ public sealed class EmailService(AndesMailerDbContext ctx, IDirectoryUserService
     {
         var email = await _ctx.Emails.FirstOrDefaultAsync(e => e.Id == id && e.TeamId == teamId, cancellationToken)
             ?? throw new NotFoundException(NotFoundMessage);
+        if (email.StatusId is EmailStatuses.Scheduled or EmailStatuses.Sending)
+        {
+            throw new EmailNotDeletableException();
+        }
 
         // DeactivationInterceptor turns the delete into a DateDeactivated stamp; the recipient and attachment filters hide the children with it.
         _ctx.Remove(email);

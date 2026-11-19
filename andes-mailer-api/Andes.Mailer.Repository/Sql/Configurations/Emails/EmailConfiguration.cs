@@ -39,7 +39,15 @@ public sealed class EmailConfiguration : BaseModifiedEntityConfiguration<Email, 
             .WithMany()
             .HasForeignKey(e => e.TemplateId)
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(e => e.SentBy)
+            .WithMany()
+            .HasForeignKey(e => e.SentById)
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(e => new { e.TeamId, e.StatusId });
+
+        // The dispatcher looks up scheduled emails that have come due.
+        builder.HasIndex(e => new { e.StatusId, e.ScheduledFor });
+        builder.HasIndex(e => e.SentById);
         builder.HasIndex(e => e.AuthorId);
         builder.HasIndex(e => e.TemplateId);
 
@@ -53,6 +61,10 @@ public sealed class EmailConfiguration : BaseModifiedEntityConfiguration<Email, 
         builder.HasMany(e => e.Attachments)
             .WithOne(a => a.Email)
             .HasForeignKey(a => a.EmailId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasMany(e => e.Deliveries)
+            .WithOne(d => d.Email)
+            .HasForeignKey(d => d.EmailId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
