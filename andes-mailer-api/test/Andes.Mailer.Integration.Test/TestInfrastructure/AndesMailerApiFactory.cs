@@ -43,6 +43,9 @@ public sealed class AndesMailerApiFactory(
 
             // Hosts in the suite run side by side on one database, like several instances; recovery in one would fail another's uploads.
             [$"{AttachmentUploadOptions.SectionName}:{nameof(AttachmentUploadOptions.RecoverOnStartup)}"] = "false",
+
+            // Off unless a test turns it on: a dispatcher in one host would send other hosts' deliveries through its own mailbox substitute.
+            [$"{EmailSendingOptions.SectionName}:{nameof(EmailSendingOptions.Enabled)}"] = "false",
         };
         foreach (var (key, value) in _configuration)
         {

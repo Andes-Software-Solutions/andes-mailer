@@ -1,3 +1,6 @@
+using System.Buffers.Text;
+
+using Andes.Mailer.Common.Constants.Base;
 using Andes.Mailer.Common.Constants.Emails;
 
 using FluentValidation;
@@ -20,6 +23,12 @@ internal static class EmailContentRules
     #endregion
 
     #region Public static methods
+
+    // The decoded length too: well-formed base64 of the wrong size would otherwise reach the store and come back as a 409.
+    public static IRuleBuilderOptions<T, string> ValidVersion<T>(this IRuleBuilder<T, string> rule) =>
+        rule.NotEmpty()
+            .Must(v => Base64.IsValid(v, out var length) && length == BaseModifiedEntityLimits.VersionLength)
+            .WithMessage("'Version' must be the base64 row version returned by the API.");
 
     public static IRuleBuilderOptions<T, string> ValidTemplateName<T>(this IRuleBuilder<T, string> rule) =>
         rule.NotEmpty().MaximumLength(EmailTemplateLimits.NameMaxLength);

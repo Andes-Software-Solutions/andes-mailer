@@ -96,4 +96,10 @@ public enum Permissions
     /// </summary>
     [Description("Creates, changes, and deactivates a team's contact groups")]
     ManageTeamContactGroups = 15,
+
+    /// <summary>
+    /// Sends or schedules a team's emails, and retries their failed recipients.
+    /// </summary>
+    [Description("Sends or schedules a team's emails")]
+    SendTeamEmails = 16,
 }

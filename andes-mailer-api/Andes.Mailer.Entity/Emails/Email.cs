@@ -75,4 +75,38 @@ public sealed class Email : BaseModifiedEntity<Guid>
     /// Gets or sets the attachments.
     /// </summary>
     public ICollection<EmailAttachment> Attachments { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets when the email is to be sent.
+    /// </summary>
+    /// <value>The scheduled time, or <see langword="null"/> for an email sent at once or not yet sent.</value>
+    public DateTimeOffset? ScheduledFor { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Entra object id of the user who sent or scheduled the email.
+    /// </summary>
+    /// <value>The object id, or <see langword="null"/> while the email is a draft.</value>
+    public Guid? SentById { get; set; }
+
+    /// <summary>
+    /// Gets or sets the user who sent or scheduled the email.
+    /// </summary>
+    public User? SentBy { get; set; }
+
+    /// <summary>
+    /// Gets or sets when the email was sent or scheduled.
+    /// </summary>
+    /// <value>The time, or <see langword="null"/> while the email is a draft.</value>
+    public DateTimeOffset? DateSendRequested { get; set; }
+
+    /// <summary>
+    /// Gets or sets when the last delivery of the email finished.
+    /// </summary>
+    /// <value>The time, or <see langword="null"/> until every delivery has been sent or has failed.</value>
+    public DateTimeOffset? DateCompleted { get; set; }
+
+    /// <summary>
+    /// Gets or sets the deliveries, one per recipient once the email is sent or scheduled.
+    /// </summary>
+    public ICollection<EmailDelivery> Deliveries { get; set; } = [];
 }

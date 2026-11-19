@@ -16,6 +16,11 @@ namespace Andes.Mailer.Dto.Emails;
 /// <param name="DateCreated">The moment the email was created.</param>
 /// <param name="DateModified">The moment the email last changed, or <see langword="null"/> if never.</param>
 /// <param name="Version">The row version as base64; send it back to update the email.</param>
+/// <param name="ScheduledFor">When the email is to be sent, or <see langword="null"/> for an email sent at once or not yet sent.</param>
+/// <param name="SentById">The Entra object id of the user who sent or scheduled the email, or <see langword="null"/> for a draft.</param>
+/// <param name="DateSendRequested">The moment the email was sent or scheduled, or <see langword="null"/> for a draft.</param>
+/// <param name="DateCompleted">The moment the last delivery finished, or <see langword="null"/> until every delivery is sent or has failed.</param>
+/// <param name="Deliveries">The deliveries counted by outcome; all zero for a draft.</param>
 public sealed record EmailDto(
     Guid Id,
     Guid AuthorId,
@@ -27,4 +32,9 @@ public sealed record EmailDto(
     IReadOnlyList<EmailAttachmentDto> Attachments,
     DateTimeOffset DateCreated,
     DateTimeOffset? DateModified,
-    string Version);
+    string Version,
+    DateTimeOffset? ScheduledFor,
+    Guid? SentById,
+    DateTimeOffset? DateSendRequested,
+    DateTimeOffset? DateCompleted,
+    EmailDeliverySummaryDto Deliveries);
