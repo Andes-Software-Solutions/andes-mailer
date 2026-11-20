@@ -1,14 +1,25 @@
+using Andes.Mailer.Api.OpenApi;
+using Andes.Mailer.Api.Options;
+
+using Microsoft.Extensions.Options;
+
 using Scalar.AspNetCore;
 
 namespace Andes.Mailer.Api.Configuration;
 
 internal static class OpenApiConfiguration
 {
+    private const string ScalarPath = "/scalar";
+
     #region Public static methods
 
     public static IServiceCollection AddAndesMailerOpenApi(this IServiceCollection services)
     {
-        services.AddOpenApi();
+        services.AddOpenApi(options =>
+        {
+            options.AddDocumentTransformer<EntraSecuritySchemeDocumentTransformer>();
+            options.AddOperationTransformer<AuthorizationOperationTransformer>();
+        });
 
         return services;
     }
@@ -18,7 +29,24 @@ internal static class OpenApiConfiguration
         if (app.Environment.IsDevelopment())
         {
             app.MapOpenApi().AllowAnonymous();
-            app.MapScalarApiReference().AllowAnonymous();
+            app.MapScalarApiReference(ScalarPath, (options, httpContext) =>
+            {
+                var azureAd = httpContext.RequestServices.GetRequiredService<IOptions<AzureAdOptions>>().Value;
+                var request = httpContext.Request;
+
+                // A public client: Entra redeems the code for a SPA redirect URI with PKCE alone, so no secret reaches the browser.
+                options
+                    .AddPreferredSecuritySchemes(EntraSecuritySchemeDocumentTransformer.SchemeName)
+                    .AddAuthorizationCodeFlow(EntraSecuritySchemeDocumentTransformer.SchemeName, flow =>
+                    {
+                        flow.ClientId = azureAd.ClientId;
+                        flow.Pkce = Pkce.Sha256;
+                        flow.SelectedScopes = [EntraOAuthEndpoints.AccessAsUserScope(azureAd)];
+
+                        // Entra matches redirect URIs exactly; each origin's /scalar is registered as a SPA redirect URI.
+                        flow.RedirectUri = $"{request.Scheme}://{request.Host}{request.PathBase}{ScalarPath}";
+                    });
+            }).AllowAnonymous();
         }
 
         return app;
