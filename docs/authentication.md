@@ -57,7 +57,7 @@ Entra's refresh tokens for a single-page application expire 24 hours after sign-
 
 ## How the API validates tokens
 
-`AddAndesMailerAuthentication` (`Andes.Mailer.Api/Configuration/AuthenticationConfiguration.cs`) registers JWT bearer authentication through `Microsoft.Identity.Web` (`AddMicrosoftIdentityWebApi`) and one policy: authenticated user plus the `access_as_user` scope (`ApiScopes.AccessAsUser`). The policy is both the default and the fallback policy, so every endpoint requires it even without `RequireAuthorization()`. An endpoint is public only if it calls `.AllowAnonymous()`. Today those are `/health/live`, `/health/ready`, and, in Development, the OpenAPI document and `/scalar`.
+`AddAndesMailerAuthentication` (`Andes.Mailer.Api/Configuration/AuthenticationConfiguration.cs`) registers JWT bearer authentication through `Microsoft.Identity.Web` (`AddMicrosoftIdentityWebApi`) and one policy: authenticated user plus the `access_as_user` scope (`ApiScopes.AccessAsUser`). The policy is both the default and the fallback policy, so every endpoint requires it even without `RequireAuthorization()`. An endpoint is public only if it calls `.AllowAnonymous()`. Today those are `/health/live`, `/health/ready`, and, in Development, the OpenAPI document and the `/scalar` page. Scalar itself loads without a token, but the endpoints it calls do not; see [Calling the API from Scalar](#calling-the-api-from-scalar). `EndpointAuthorizationIntegrationTests` enforces that list: it fails if any other mapped endpoint carries `IAllowAnonymous`. A contributor who adds an anonymous route must update the test's allow-list on purpose.
 
 `Program.cs` calls `UseAuthentication()` and `UseAuthorization()` explicitly, after `UseStatusCodePages()`. The auto-added pair would run before it and leave 401 and 403 responses with empty bodies.
 
@@ -66,6 +66,25 @@ Because the fallback policy also covers unmatched routes, an anonymous request t
 `GET /api/users/me` returns the caller's object id and display name; the UI shows the name on the home page. A valid token proves who the caller is; what they may do is decided by roles and permissions, described in [Users and permissions](users-and-permissions.md).
 
 Besides validating tokens, the API acts as itself when it calls Microsoft Graph (to look up a directory account when someone adds a user). That app-only call uses the same registration and needs its own credential; see [Configuration](#configuration).
+
+## Calling the API from Scalar
+
+In Development, `/scalar` is the API reference, and you can call protected endpoints from it. The OpenAPI document declares an OAuth2 security scheme named `Entra` (authorization code flow) and marks every operation that is not `.AllowAnonymous()` as requiring the `api://<ClientId>/access_as_user` scope, which mirrors the fallback policy. Scalar preselects that scheme, so you sign in as yourself instead of pasting a token.
+
+1. Add the two Scalar redirect URIs described in [Entra app registration requirements](#entra-app-registration-requirements).
+2. From `andes-mailer-api/`, start the API on the `https` profile: `dotnet run --launch-profile https --project Andes.Mailer.Api`.
+3. Open `https://localhost:7093/scalar`.
+4. Open **Authentication**, choose **Entra**, and select **Authorize**.
+5. Sign in to Microsoft in the popup. Scalar receives the token when the popup closes.
+6. Pick an endpoint, for example `GET /api/users/me`, and select **Try It**.
+
+Without steps 4 and 5, a protected endpoint returns 401.
+
+How it works, and what to expect:
+
+- Scalar uses the same registration as the UI (`AzureAd:ClientId`) as a public client: authorization code with PKCE (SHA-256) and no client secret. There is no Scalar proxy, so the browser redeems the code with Entra directly, which Entra allows only for a single-page application redirect URI.
+- Authentication is not persisted: `EnablePersistentAuthentication()` is off, so Scalar never writes the token to `localStorage`. Expect to sign in again after a reload.
+- The scheme exists only in Development, where Scalar is mapped. Token validation in the API did not change.
 
 ## Configuration
 
@@ -87,6 +106,7 @@ The Entra values (`Instance`, `TenantId`, `ClientId`, `clientId`, `authority`, `
 - **Redirect URI.** `http://localhost:4200/auth` must be registered as a **single-page application** redirect URI, so serve the UI on port 4200. If it is missing, sign-in fails with `AADSTS50011`. Entra matches the URI exactly.
 - **Exposed scope.** The registration exposes `access_as_user`, and `apiScopes` in `config.json` requests `api://<clientId>/access_as_user`.
 - **Graph permission.** The registration needs the Microsoft Graph **application** permission `User.Read.All`, with admin consent granted, and a credential (a client secret for local work). See [Users and permissions](users-and-permissions.md#microsoft-graph-setup).
+- **Scalar redirect URIs.** Register `https://localhost:7093/scalar` and `http://localhost:5145/scalar` as **single-page application** redirect URIs (the `https` and `http` launch profiles). Scalar sends `<request origin>/scalar` as the redirect URI, and Entra matches it exactly. If one is missing, or is registered under the Web platform, sign-in fails with `AADSTS50011`.
 - **Other environments.** Each deployed environment needs its own `<origin>/auth` registered and its own `config.json` with the right values.
 
 ## Production host requirements
@@ -104,10 +124,11 @@ Both header rules come from MSAL's [redirect bridge documentation](https://raw.g
 - **No sign-out.** Because `authGuard` redirects automatically, a sign-out added later must land on a page that does not auto-redirect, or the user is signed straight back in.
 - **No renewal ahead of time, no 401 retry.** The UI renews a token only when a request needs one, and a 401 from the API reaches the caller as it is; see [Token renewal](#token-renewal).
 - **Shared app registration.** Both apps currently use the registration that `enterprise-gpt` uses, so a token issued for one app is accepted by the other's API. andes-mailer needs its own registration before production.
-- **Scalar cannot call protected endpoints.** `/scalar` lists the `/api/users` endpoints, but it has no way to attach a token, so Try It returns 401.
 - **The API needs a secret.** The API cannot start Graph lookups without `AzureAd:ClientSecret`, which lives in user secrets, never in committed configuration. Because the registration is shared with `enterprise-gpt`, the secret and the `User.Read.All` consent apply to that app too, one more reason to give andes-mailer its own registration.
 
 ## Testing
 
 - **UI specs** run the app's real `provideMsal()` wiring around a fake MSAL instance: `provideFakeMsal(instance)` in `src/testing/msal.ts` swaps only `MSAL_INSTANCE`, so the guard, interceptor, and initializer under test are the production ones. Build the instance with `signedInMsal`, `signedOutMsal`, or `fakeMsalInstance`, which spread msal-browser's `stubbedPublicClientApplication` so a call you did not stub rejects with a named MSAL error; `eventCallbacks()` captures what MSAL Angular registers so a spec can raise events. Add `provideTestAppConfig()` from `src/testing/app-config.ts`, which `provideMsal()` reads. jsdom cannot run a real MSAL instance.
 - **API integration tests** create the host with `new AndesMailerApiFactory(connectionString, useTestAuthentication: true)`, which swaps in `TestAuthHandler`. Send the `X-Test-Scopes` header with the scopes to grant, for example `access_as_user`. Without the header the request is anonymous. Without `useTestAuthentication`, the real JWT bearer handler runs and any request without a token gets 401.
+- **OpenAPI document test.** `OpenApiDocumentIntegrationTests` (`test/Andes.Mailer.Integration.Test/Endpoints/`) reads the generated document from the keyed `IOpenApiDocumentProvider` (`"v1"`) and checks that the `Entra` scheme has the tenant's authorize and token URLs and the `access_as_user` scope, and that a protected operation requires it. `EntraSecuritySchemeDocumentTransformer` and `EntraOAuthEndpoints` have unit tests too. None of these tests drive the Scalar sign-in popup; try that by hand after changing the redirect URI or the client settings.
+- **Endpoint authorization test.** `EndpointAuthorizationIntegrationTests` (`test/Andes.Mailer.Integration.Test/Endpoints/`) guards the rule that every API endpoint needs a token, using the real JWT bearer handler. It checks three things. Among all mapped endpoints, only `/health/live` and `/health/ready` may carry `IAllowAnonymous`; the Development-only `/openapi/v1.json` and `/scalar` are not mapped under the Testing environment. Every `/api/` endpoint must have authorization metadata, meaning its group calls `RequireAuthorization()`. And an anonymous request to every `/api/` endpoint and HTTP method must return 401, with route values chosen to satisfy each route constraint so the request reaches the endpoint; a constraint the test does not know makes it fail, asking you to add a value. Adding an anonymous route means updating the test's allow-list.
