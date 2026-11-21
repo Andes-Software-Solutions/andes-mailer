@@ -1,3 +1,6 @@
+using System.Diagnostics;
+
+using Andes.Mailer.Common.Constants;
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Entity.Emails;
 using Andes.Mailer.Entity.Emails.Templates;
@@ -83,6 +86,43 @@ public sealed class AttachmentUploadProcessorTests : IAsyncDisposable
 
         // The write may have landed even though it reported a failure, so the blob is removed too.
         await _store.Received(1).DeleteIfExistsAsync(failing.BlobName, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Process_QueuedAttachment_TracesTheUploadAsARootActivity()
+    {
+        using var activities = new ActivityCollector();
+        var attachment = await AddPendingAsync(staged: true);
+        using var processor = CreateProcessor();
+        await processor.StartAsync(TestContext.Current.CancellationToken);
+
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Email, attachment.Id), TestContext.Current.CancellationToken);
+        var upload = await activities.WaitForAsync(a => Equals(a.GetTagItem(TelemetryNames.AttachmentIdTag), attachment.Id));
+        await processor.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(TelemetryNames.AttachmentUploadActivity, upload.OperationName);
+        Assert.Equal(nameof(AttachmentOwners.Email), upload.GetTagItem(TelemetryNames.AttachmentOwnerTag));
+        Assert.Equal(default, upload.ParentSpanId);
+        Assert.Equal(ActivityStatusCode.Unset, upload.Status);
+    }
+
+    [Fact]
+    public async Task Process_StoreFails_MarksTheUploadActivityAsError()
+    {
+        using var activities = new ActivityCollector();
+        var attachment = await AddPendingAsync(staged: true);
+        _store.UploadAsync(attachment.BlobName, Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new IOException("storage unreachable"));
+        using var processor = CreateProcessor(maxUploadAttempts: 2);
+        await processor.StartAsync(TestContext.Current.CancellationToken);
+
+        await _channel.EnqueueAsync(new StagedAttachmentJob(AttachmentOwners.Email, attachment.Id), TestContext.Current.CancellationToken);
+        var upload = await activities.WaitForAsync(a => Equals(a.GetTagItem(TelemetryNames.AttachmentIdTag), attachment.Id));
+        await WaitForStatusAsync(attachment.Id, AttachmentStatuses.Failed);
+        await processor.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(ActivityStatusCode.Error, upload.Status);
+        Assert.Equal(nameof(IOException), upload.StatusDescription);
     }
 
     [Fact]

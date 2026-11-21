@@ -5,6 +5,7 @@ using FluentValidation;
 
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Identity.Web;
 
 namespace Andes.Mailer.Api.ExceptionHandlers;
 
@@ -25,7 +26,7 @@ internal sealed partial class GlobalExceptionHandler(IProblemDetailsService prob
         var status = problem.Status ?? StatusCodes.Status500InternalServerError;
         if (status >= StatusCodes.Status500InternalServerError)
         {
-            LogUnhandledException(_logger, exception, httpContext.Request.Method, httpContext.Request.Path);
+            LogUnhandledException(_logger, exception, httpContext.Request.Method, httpContext.Request.Path, httpContext.User.GetObjectId());
         }
 
         httpContext.Response.StatusCode = status;
@@ -66,8 +67,9 @@ internal sealed partial class GlobalExceptionHandler(IProblemDetailsService prob
 
     #region Logging
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Unhandled exception for {Method} {Path}")]
-    private static partial void LogUnhandledException(ILogger logger, Exception exception, string method, PathString path);
+    // The caller is named here because this handler runs outside the request scope that carries it.
+    [LoggerMessage(Level = LogLevel.Error, Message = "Unhandled exception for {Method} {Path} for user {UserId}")]
+    private static partial void LogUnhandledException(ILogger logger, Exception exception, string method, PathString path, string? userId);
 
     #endregion
 }

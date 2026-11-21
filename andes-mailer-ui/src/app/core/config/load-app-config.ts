@@ -1,9 +1,11 @@
-import { AppConfig } from './app-config.model';
+import { AppConfig, TelemetryConfig } from './app-config.model';
 
 /** Without a limit, a wedged host leaves a blank page instead of the startup failure message. */
 const FETCH_TIMEOUT_MS = 10_000;
 
 const GUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+const INSTRUMENTATION_KEY = /(^|;)\s*InstrumentationKey=[^;]+/i;
 
 export async function loadAppConfig(baseUri: string): Promise<AppConfig> {
   // Against the base URI, so a hard reload on a deep route still finds the file.
@@ -43,5 +45,21 @@ function assertAppConfig(value: unknown): asserts value is AppConfig {
     !scopes.every((scope) => typeof scope === 'string' && scope.trim() !== '')
   ) {
     throw new Error('auth.apiScopes must list at least one scope, each a non-empty string.');
+  }
+
+  assertTelemetryConfig((value as Partial<AppConfig>).telemetry);
+}
+
+function assertTelemetryConfig(telemetry: unknown): void {
+  if (telemetry === undefined) {
+    return;
+  }
+
+  const connectionString = (telemetry as Partial<TelemetryConfig> | null)?.connectionString;
+
+  if (typeof connectionString !== 'string' || !INSTRUMENTATION_KEY.test(connectionString)) {
+    throw new Error(
+      "telemetry.connectionString must be the Application Insights resource's connection string.",
+    );
   }
 }

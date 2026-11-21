@@ -1,6 +1,6 @@
 import { Provider } from '@angular/core';
 import { APP_CONFIG } from '../app/core/config/app-config-token';
-import { AppConfig } from '../app/core/config/app-config.model';
+import { AppConfig, TelemetryConfig } from '../app/core/config/app-config.model';
 
 export const testApiScope = 'api://b40defa0-0000-4000-8000-000000000000/access_as_user';
 
@@ -12,6 +12,12 @@ export const testAppConfig: AppConfig = {
   },
 };
 
-export function provideTestAppConfig(): Provider {
-  return { provide: APP_CONFIG, useValue: testAppConfig };
+export const testTelemetryConfig: TelemetryConfig = {
+  connectionString:
+    'InstrumentationKey=00000000-0000-4000-8000-000000000000;IngestionEndpoint=https://westeurope-5.in.applicationinsights.azure.com/',
+};
+
+/** The test config, or another one, such as `{ ...testAppConfig, telemetry: testTelemetryConfig }`. */
+export function provideTestAppConfig(config: AppConfig = testAppConfig): Provider {
+  return { provide: APP_CONFIG, useValue: config };
 }

@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
+using Andes.Mailer.Common.Constants;
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Entity.Emails.Interfaces;
 using Andes.Mailer.Repository.Blob;
 using Andes.Mailer.Repository.Sql.DbContexts;
 using Andes.Mailer.Service.Emails.Attachments.Models;
+using Andes.Mailer.Service.Observability;
 using Andes.Mailer.Service.Options;
 
 using Microsoft.EntityFrameworkCore;
@@ -96,6 +98,10 @@ public sealed partial class AttachmentUploadProcessor(
                 continue;
             }
 
+            // A root activity: the request that staged the file has already answered 202, so the upload is an operation of its own.
+            using var activity = AndesMailerActivitySource.Instance.StartActivity(TelemetryNames.AttachmentUploadActivity);
+            activity?.SetTag(TelemetryNames.AttachmentIdTag, job.Id);
+            activity?.SetTag(TelemetryNames.AttachmentOwnerTag, job.Owner.ToString());
             try
             {
                 await ProcessAsync(job, cancellationToken);
@@ -109,6 +115,7 @@ public sealed partial class AttachmentUploadProcessor(
             catch (Exception ex)
 #pragma warning restore CA1031
             {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
                 await RetryOrFailAsync(job, ex, cancellationToken);
             }
             finally

@@ -7,8 +7,10 @@ namespace Andes.Mailer.Api.Health;
 
 internal static class HealthRegistration
 {
-    private const string LivePath = "/health/live";
-    private const string ReadyPath = "/health/ready";
+    public const string BasePath = "/health";
+
+    private const string LivePath = BasePath + "/live";
+    private const string ReadyPath = BasePath + "/ready";
     private const string ReadyTag = "ready";
     private const string SqlCheckName = "sql";
     private const string BlobCheckName = "blob";
