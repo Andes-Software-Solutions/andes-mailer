@@ -22,8 +22,12 @@ export function enrichTelemetry(item: ITelemetryItem, page: string): void {
 
   const dependency = item.baseData;
 
-  if (typeof dependency['target'] === 'string') {
-    dependency['target'] = withoutQuery(dependency['target']);
+  // The SDK builds the exported `data` field from `name` and `target`, but a dependency tracked by
+  // hand can carry its own, so all three are scrubbed.
+  for (const field of ['target', 'data']) {
+    if (typeof dependency[field] === 'string') {
+      dependency[field] = withoutQuery(dependency[field]);
+    }
   }
 
   if (typeof dependency['name'] === 'string') {

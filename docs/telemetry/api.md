@@ -25,7 +25,7 @@ The `ApplicationInsights` section is optional (`ApplicationInsightsOptions`, in 
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `ConnectionString` | empty | The resource's connection string. It must hold an `InstrumentationKey=` part, or the API refuses to start. When empty, the API reads the `APPLICATIONINSIGHTS_CONNECTION_STRING` environment variable, which App Service sets. |
+| `ConnectionString` | empty | The resource's connection string. It must hold an `InstrumentationKey=` part, or the API refuses to start. When empty, the API reads the `APPLICATIONINSIGHTS_CONNECTION_STRING` environment variable, which App Service sets, and checks it against the same rule. |
 | `TracesPerSecond` | 5 | The most traces a second the API sends, from 0.01 to 1000. A trace beyond it is dropped whole. Logs are never dropped. |
 
 Set the connection string in user secrets locally, from `andes-mailer-api/`:
@@ -38,7 +38,7 @@ dotnet user-secrets set "ApplicationInsights:ConnectionString" "InstrumentationK
 
 ### Without a connection string
 
-The API still traces. It creates the same activities and puts the trace id in its log line and in Problem Details, but it exports nothing (`ExportTarget.None`). The integration tests rely on this, so they never send data to a real resource.
+The API still traces. It creates the same activities and puts the trace id in its log line and in Problem Details, but it exports nothing (`ExportTarget.None`). The integration tests rely on this: `AndesMailerApiFactory` sets both `ApplicationInsights:ConnectionString` and `APPLICATIONINSIGHTS_CONNECTION_STRING` to empty with `UseSetting`, so a connection string in your environment never sends test traffic to a real resource.
 
 The exporter is set explicitly, so a stray OTLP or Agent 365 setting in the environment never turns another exporter on.
 
@@ -139,7 +139,6 @@ A log written with an exception, such as "Delivery {DeliveryId} failed on its la
 - **Anonymous requests have no user.** A request that never authenticates has no `UserId`, `enduser.id`, or `user_AuthenticatedId`.
 - **Background logs have no caller.** A dispatch or upload log has ids such as `DeliveryId`, but no `UserId`, because no request scope is open.
 - **One resource per environment, not per app.** The API and the UI share a resource, so roles filter, not resources.
-- **The test host reads the environment.** If `APPLICATIONINSIGHTS_CONNECTION_STRING` is set on your machine, the integration tests export to that resource. Unset it before you run `dotnet test`.
 
 ## Testing
 

@@ -44,6 +44,16 @@ describe('enrichTelemetry', () => {
     });
     expect(JSON.stringify(item)).not.toContain('ada@example.com');
   });
+
+  it('drops the query string from a dependency that carries its own data field', () => {
+    const url = 'https://localhost/api/users/directory?search=ada@example.com';
+    const item = dependency('GET /api/users/directory', url);
+    item.baseData = { ...item.baseData, data: url };
+
+    enrichTelemetry(item, '/');
+
+    expect(item.baseData['data']).toBe('https://localhost/api/users/directory');
+  });
 });
 
 describe('apiOperation', () => {
