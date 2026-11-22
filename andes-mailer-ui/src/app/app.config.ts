@@ -3,6 +3,7 @@ import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { authInterceptor } from '@core/auth/auth-interceptor';
 import { provideMsal } from '@core/auth/provide-msal';
+import { provideTelemetry } from '@core/telemetry/provide-telemetry';
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -11,5 +12,6 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes, withComponentInputBinding()),
     provideHttpClient(withInterceptors([authInterceptor])),
     ...provideMsal(),
+    ...provideTelemetry(),
   ],
 };

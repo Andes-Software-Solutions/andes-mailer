@@ -1,10 +1,13 @@
+using System.Diagnostics;
 using System.Linq.Expressions;
 
+using Andes.Mailer.Common.Constants;
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Entity.Emails;
 using Andes.Mailer.Repository.Sql.DbContexts;
 using Andes.Mailer.Service.Emails.Sending.Exceptions;
 using Andes.Mailer.Service.Emails.Sending.Models;
+using Andes.Mailer.Service.Observability;
 using Andes.Mailer.Service.Options;
 
 using Microsoft.EntityFrameworkCore;
@@ -143,6 +146,8 @@ public sealed partial class EmailDispatchProcessor(
 
     private async Task RunSafelyAsync(CancellationToken cancellationToken)
     {
+        // A root activity, so the run's store and Graph calls, its deliveries, and its logs share one operation in telemetry.
+        using var activity = AndesMailerActivitySource.Instance.StartActivity(TelemetryNames.EmailDispatchActivity);
         try
         {
             await DispatchOnceAsync(cancellationToken);
@@ -155,6 +160,7 @@ public sealed partial class EmailDispatchProcessor(
         catch (Exception ex)
 #pragma warning restore CA1031
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
             LogRunFailed(_logger, ex);
         }
     }
@@ -218,6 +224,8 @@ public sealed partial class EmailDispatchProcessor(
     // Returns true when the mailbox is throttled, so the run stops sending from it.
     private async Task<bool> DeliverSafelyAsync(Guid deliveryId, CancellationToken cancellationToken)
     {
+        using var activity = AndesMailerActivitySource.Instance.StartActivity(TelemetryNames.EmailDeliveryActivity);
+        activity?.SetTag(TelemetryNames.DeliveryIdTag, deliveryId);
         try
         {
             return await DeliverAsync(deliveryId, cancellationToken);
@@ -230,6 +238,7 @@ public sealed partial class EmailDispatchProcessor(
         catch (Exception ex)
 #pragma warning restore CA1031
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
             LogDeliveryFaulted(_logger, ex, deliveryId);
 
             return false;

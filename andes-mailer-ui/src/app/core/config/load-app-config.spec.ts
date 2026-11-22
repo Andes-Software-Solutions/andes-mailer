@@ -1,4 +1,4 @@
-import { testAppConfig } from '@testing/app-config';
+import { testAppConfig, testTelemetryConfig } from '@testing/app-config';
 import { vi } from 'vitest';
 import { loadAppConfig } from './load-app-config';
 
@@ -20,6 +20,13 @@ describe('loadAppConfig', () => {
     respondWith(testAppConfig);
 
     await expect(loadAppConfig(baseUri)).resolves.toEqual(testAppConfig);
+  });
+
+  it('returns a config with a telemetry section', async () => {
+    const config = { ...testAppConfig, telemetry: testTelemetryConfig };
+    respondWith(config);
+
+    await expect(loadAppConfig(baseUri)).resolves.toEqual(config);
   });
 
   it('resolves config.json against the base URI, so deep routes reload', async () => {
@@ -52,6 +59,21 @@ describe('loadAppConfig', () => {
       'a scope that is not a string',
       { auth: { ...testAppConfig.auth, apiScopes: [42] } },
       'auth.apiScopes',
+    ],
+    [
+      'a null telemetry section',
+      { ...testAppConfig, telemetry: null },
+      'telemetry.connectionString',
+    ],
+    [
+      'a blank connection string',
+      { ...testAppConfig, telemetry: { connectionString: ' ' } },
+      'telemetry.connectionString',
+    ],
+    [
+      'an instrumentation key on its own',
+      { ...testAppConfig, telemetry: { connectionString: '00000000-0000-4000-8000-000000000000' } },
+      'telemetry.connectionString',
     ],
   ])('rejects %s', async (_case, body, message) => {
     respondWith(body);

@@ -128,6 +128,7 @@ npx ng test --watch=false
 | [Emails and attachments](docs/emails-and-attachments.md) | Drafts, recipients, the background upload pipeline, duplicate detection |
 | [Email templates](docs/email-templates.md) | Templates, starting a draft from one, duplicating |
 | [Contact groups](docs/contact-groups.md) | A team's named address lists, adding a group's addresses to an email |
+| [Telemetry](docs/telemetry/README.md) | Application Insights in the API and the UI, the request log, privacy rules, KQL queries |
 
 ## Contributing
 

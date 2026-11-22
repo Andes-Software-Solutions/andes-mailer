@@ -13,6 +13,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Identity.Web" />
     <PackageReference Include="Microsoft.Identity.Web.GraphServiceClient" />
+    <PackageReference Include="Microsoft.OpenTelemetry" />
     <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
 

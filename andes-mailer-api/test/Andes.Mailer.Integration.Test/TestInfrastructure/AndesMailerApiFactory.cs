@@ -1,3 +1,4 @@
+using Andes.Mailer.Api.Options;
 using Andes.Mailer.Repository.Blob.Options;
 using Andes.Mailer.Repository.Sql.Options;
 using Andes.Mailer.Service.Options;
@@ -33,6 +34,11 @@ public sealed class AndesMailerApiFactory(
     {
         // Not Development: that loads user secrets, and the suite must never reach the local database.
         builder.UseEnvironment(TestEnvironment);
+
+        // UseSetting, not the in-memory collection below: Program reads these while it registers services, before that collection applies.
+        // Empty overrides a connection string in the machine's environment, so the suite never sends test traffic to a real resource.
+        builder.UseSetting($"{ApplicationInsightsOptions.SectionName}:{nameof(ApplicationInsightsOptions.ConnectionString)}", string.Empty);
+        builder.UseSetting(ApplicationInsightsOptions.ConnectionStringVariable, string.Empty);
 
         // The caller's entries are applied last so a test can override any default.
         var settings = new Dictionary<string, string?>

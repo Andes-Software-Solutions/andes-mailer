@@ -1,3 +1,6 @@
+using System.Diagnostics;
+
+using Andes.Mailer.Common.Constants;
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Entity.Emails;
 using Andes.Mailer.Service.Emails.Sending;
@@ -520,6 +523,25 @@ public sealed class EmailDispatchProcessorTests : IAsyncDisposable
         await processor.StopAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(DeliveryStatuses.Sent, sent);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Started_TracesTheRunWithEachDeliveryUnderIt()
+    {
+        using var activities = new ActivityCollector();
+        var email = await SeedAsync(EmailStatuses.Sending, "ada@contoso.com");
+        var deliveryId = Assert.Single(await ReadDeliveriesAsync(email.Id)).Id;
+        using var processor = CreateProcessor();
+
+        await processor.StartAsync(TestContext.Current.CancellationToken);
+        var delivery = await activities.WaitForAsync(a =>
+            a.OperationName == TelemetryNames.EmailDeliveryActivity && Equals(a.GetTagItem(TelemetryNames.DeliveryIdTag), deliveryId));
+        var run = await activities.WaitForAsync(a => a.OperationName == TelemetryNames.EmailDispatchActivity && a.SpanId == delivery.ParentSpanId);
+        await processor.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(run.TraceId, delivery.TraceId);
+        Assert.Equal(default, run.ParentSpanId);
+        Assert.Equal(ActivityStatusCode.Unset, delivery.Status);
     }
 
     [Fact]
