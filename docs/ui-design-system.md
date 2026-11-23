@@ -61,8 +61,8 @@ The mockup's green and teal palette replaces the earlier navy one. These are the
 
 - **System by default.** With no stored choice the store follows `prefers-color-scheme` and updates when the operating system changes.
 - **Only explicit choices are stored.** Picking Light or Dark writes `localStorage['andes-mailer.theme']`; picking **Same as system** removes it, so a person who never chooses keeps following their device. Blocked storage is tolerated: the choice then lasts for the page.
-- **No flash.** `src/main.ts` calls `applyInitialTheme(document)` before Angular boots, so the sign-in splash, which shows before the store exists, is already in the right theme. `index.html` carries no `data-bs-theme` of its own, only `<meta name="color-scheme" content="light dark">`.
-- **Controls.** The top bar's toggle flips between light and dark (an explicit choice), and the account menu offers Light, Dark, and Same as system. Both call the store; nothing else sets the attribute.
+- **No flash.** An inline script in the `<head>` of `src/index.html` sets `data-bs-theme` before the first paint, so the sign-in splash, which shows before the store exists, is already in the right theme even when the bundle loads slowly. It mirrors `applyInitialTheme` in `src/app/core/theme/theme-preference.ts`, which `src/main.ts` still calls before Angular boots but which alone runs too late to prevent a light flash on a slow load. Keep the script and the function in step. `index.html` carries no `data-bs-theme` attribute of its own, only the script and `<meta name="color-scheme" content="light dark">`.
+- **Controls.** The top bar's toggle flips between light and dark (an explicit choice), and the account menu offers Light, Dark, and Same as system. Both call the store; after boot, nothing else sets the attribute.
 
 To test a component in both themes, set `data-bs-theme` on a parent in the spec, or flip the toggle in the running app.
 

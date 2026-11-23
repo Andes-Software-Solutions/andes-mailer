@@ -48,9 +48,13 @@
   }
 }
 
+// A fixed menu can't be reached by scrolling the page, so a long team list scrolls inside it. The
+// sidebar toggle's bottom edge sits about 9.5rem down, the lowest of the three layouts.
 .dropdown-menu {
   width: 300px;
   max-width: calc(100vw - 2rem);
+  max-height: min(28rem, calc(100dvh - 11rem));
+  overflow-y: auto;
 }
 
 .dropdown-item .avatar {

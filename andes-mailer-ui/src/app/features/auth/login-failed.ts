@@ -1,4 +1,12 @@
-import { Component, inject, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { SessionStore } from '@core/auth/session-store';
 import { SignInLayout } from '@shared/sign-in-layout/sign-in-layout';
 
@@ -10,11 +18,12 @@ import { SignInLayout } from '@shared/sign-in-layout/sign-in-layout';
 })
 export class LoginFailed {
   private readonly _session = inject(SessionStore);
+  private readonly _injector = inject(Injector);
+  private readonly _failure = viewChild<ElementRef<HTMLElement>>('failure');
 
   /** Latches, so a second press cannot start a second redirect over the first. */
   protected readonly retrying = signal(false);
 
-  /** MSAL's redirect lock has no release API, so after this only a reload can try again. */
   protected readonly retryFailed = signal(false);
 
   protected async retry(): Promise<void> {
@@ -26,6 +35,8 @@ export class LoginFailed {
       console.error(cause);
       this.retrying.set(false);
       this.retryFailed.set(true);
+      // Disabling the button dropped its focus; the message is where the person continues.
+      afterNextRender(() => this._failure()?.nativeElement.focus(), { injector: this._injector });
     }
   }
 }

@@ -33,4 +33,27 @@ describe('NoAccess', () => {
       expect.objectContaining({ prompt: 'select_account' }),
     );
   });
+
+  it('announces and focuses the failure when Microsoft cannot be reached', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    TestBed.configureTestingModule({
+      providers: provideSessionTesting(
+        signedInMsal({ loginRedirect: () => Promise.reject(new Error('endpoints_resolution')) }),
+      ),
+    });
+    seedSession(noAccessUser);
+    const fixture = TestBed.createComponent(NoAccess);
+    await fixture.whenStable();
+    const element = fixture.nativeElement as HTMLElement;
+
+    const status = element.querySelector('[role=status]');
+    element.querySelector('button')?.click();
+    await vi.waitFor(async () => {
+      await fixture.whenStable();
+      expect(element.querySelector('[role=status]')).toBe(status);
+      expect(status?.textContent).toContain("We couldn't reach Microsoft.");
+      expect(document.activeElement).toBe(status?.querySelector('p'));
+    });
+    expect(element.querySelector('button')?.disabled).toBe(false);
+  });
 });

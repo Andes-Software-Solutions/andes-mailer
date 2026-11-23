@@ -65,17 +65,20 @@ describe('LoginFailed', () => {
     expect(button(fixture)?.disabled).toBe(true);
   });
 
-  it('tells the user to reload when Microsoft cannot be reached', async () => {
+  it('announces and focuses the failure when Microsoft cannot be reached', async () => {
     const fixture = await render(
       signedOutMsal({ loginRedirect: () => Promise.reject(new Error('endpoints_resolution')) }),
     );
+    const status = element(fixture).querySelector('[role=status]');
 
     button(fixture)?.click();
     await vi.waitFor(async () => {
       await fixture.whenStable();
-      expect(element(fixture).textContent).toContain("We couldn't reach Microsoft.");
+      expect(element(fixture).querySelector('[role=status]')).toBe(status);
+      expect(status?.textContent).toContain("We couldn't reach Microsoft.");
+      expect(document.activeElement).toBe(status?.querySelector('p'));
     });
 
-    expect(button(fixture)).toBeNull();
+    expect(button(fixture)?.disabled).toBe(false);
   });
 });

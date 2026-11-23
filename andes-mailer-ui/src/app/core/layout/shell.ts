@@ -29,6 +29,9 @@ import { TeamSwitcher } from './team-switcher';
 import { ThemeToggle } from './theme-toggle';
 import { UserMenu } from './user-menu';
 
+/** Bootstrap's md breakpoint: from here the sidebar or rail replaces the phone menu. */
+const SIDEBAR_QUERY = '(min-width: 768px)';
+
 /**
  * The signed-in frame: sidebar (an icon rail at tablet width, a slide-in menu on phones), top bar
  * with the theme toggle and account menu, and the page. Lazy, so Bootstrap's JavaScript stays out
@@ -75,20 +78,34 @@ export class Shell {
 
     afterNextRender(() => {
       const menu = this._menu().nativeElement;
+      const wide = menu.ownerDocument.defaultView?.matchMedia?.(SIDEBAR_QUERY);
       // Bootstrap returns focus to the opener only for its data-API toggle, not for show(). Only
       // when focus is still in the menu or lost: a followed link has already moved it to the page.
+      // Past the phone width the menu button is hidden, so the page takes focus instead.
       const refocus = (): void => {
         const active = menu.ownerDocument.activeElement;
 
         if (!active || active === menu.ownerDocument.body || menu.contains(active)) {
-          this._menuButton().nativeElement.focus();
+          (wide?.matches ? this._main() : this._menuButton()).nativeElement.focus();
+        }
+      };
+      // d-md-none hides the open panel on a resize but leaves its backdrop, scroll lock and focus
+      // trap, and Bootstrap's own resize handling skips a fixed panel. Checked again once a show
+      // finishes, for a resize made mid-transition.
+      const closeIfWide = (): void => {
+        if (wide?.matches) {
+          this._offcanvas?.hide();
         }
       };
 
       this._offcanvas = Offcanvas.getOrCreateInstance(menu);
       menu.addEventListener('hidden.bs.offcanvas', refocus);
+      menu.addEventListener('shown.bs.offcanvas', closeIfWide);
+      wide?.addEventListener('change', closeIfWide);
       destroyRef.onDestroy(() => {
         menu.removeEventListener('hidden.bs.offcanvas', refocus);
+        menu.removeEventListener('shown.bs.offcanvas', closeIfWide);
+        wide?.removeEventListener('change', closeIfWide);
         this._offcanvas?.dispose();
       });
     });

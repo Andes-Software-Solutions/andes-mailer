@@ -55,6 +55,7 @@ describe('Shell', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('shows a member the main nav without the administration section', async () => {
@@ -143,6 +144,25 @@ describe('Shell', () => {
     close?.click();
 
     await vi.waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it('closes the phone menu and focuses the page when the window widens', async () => {
+    const wide = new EventTarget() as EventTarget & { matches: boolean };
+    wide.matches = false;
+    vi.stubGlobal('matchMedia', () => wide);
+    const harness = await open('/', () => seedSession(memberUser));
+    const root = harness.routeNativeElement as HTMLElement;
+    const main = root.querySelector('main');
+
+    root.querySelector<HTMLButtonElement>('[aria-label="Open menu"]')?.click();
+    await menuShown(root);
+    wide.matches = true;
+    wide.dispatchEvent(new Event('change'));
+
+    await vi.waitFor(() => {
+      expect(root.querySelector('.offcanvas.show')).toBeNull();
+      expect(document.activeElement).toBe(main);
+    });
   });
 
   it('leaves a page the newly picked team does not permit', async () => {

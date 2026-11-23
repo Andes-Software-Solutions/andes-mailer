@@ -66,7 +66,7 @@ dotnet user-secrets set "BlobStorage:ConnectionString" "UseDevelopmentStorage=tr
 dotnet user-secrets set "AzureAd:ClientSecret" "<client-secret>" --project Andes.Mailer.Api
 ```
 
-Secrets go in user secrets only, never in committed config. The API refuses to start without `SqlDb:ConnectionString` or `BlobStorage:ConnectionString`.
+Secrets go in user secrets only, never in committed config. The API refuses to start without `SqlDb:ConnectionString` or `BlobStorage:ConnectionString`. In Development, `SqlDb:ConnectionString` defaults to LocalDB (`(localdb)\MSSQLLocalDB`, database `AndesMailer`), so the `SqlDb` secret above is only needed to use a different SQL Server; other environments must always set it.
 
 ### 2. Start Azurite and apply migrations
 
