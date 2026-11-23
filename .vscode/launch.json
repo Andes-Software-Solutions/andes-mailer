@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "API: debug",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "api: build",
+      "program": "${workspaceFolder}/andes-mailer-api/Andes.Mailer.Api/bin/Debug/net10.0/Andes.Mailer.Api.dll",
+      "cwd": "${workspaceFolder}/andes-mailer-api/Andes.Mailer.Api",
+      // The UI's dev proxy forwards /api/** to https://localhost:7093, which only the https profile serves.
+      "launchSettingsFilePath": "${workspaceFolder}/andes-mailer-api/Andes.Mailer.Api/Properties/launchSettings.json",
+      "launchSettingsProfile": "https",
+      "console": "internalConsole",
+      "stopAtEntry": false,
+      // openExternally keeps your signed-in browser profile, so Entra sign-in in Scalar is one click.
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "Now listening on: (https://\\S+)",
+        "uriFormat": "%s/scalar/"
+      }
+    },
+    {
+      "name": "UI: debug",
+      "type": "msedge",
+      "request": "launch",
+      "preLaunchTask": "ui: serve",
+      // Entra only redirects back to http://localhost:4200, so the port is fixed.
+      "url": "http://localhost:4200/",
+      "webRoot": "${workspaceFolder}/andes-mailer-ui"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "API + UI: debug",
+      "configurations": ["API: debug", "UI: debug"],
+      "stopAll": true
+    }
+  ]
+}

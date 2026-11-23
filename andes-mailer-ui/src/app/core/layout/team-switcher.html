@@ -1,0 +1,51 @@
+<div class="dropdown">
+  <button
+    #toggle
+    class="team-switch"
+    type="button"
+    data-bs-toggle="dropdown"
+    aria-expanded="false"
+    aria-haspopup="menu"
+    [attr.aria-label]="toggleLabel()"
+    [disabled]="options().length === 0"
+  >
+    @if (active(); as current) {
+      <span class="avatar avatar-team" aria-hidden="true">{{ current.initials }}</span>
+      <span class="ts-name text-truncate">{{ current.team.name }}</span>
+      @if (current.badge && !compact()) {
+        <span class="badge" [class]="current.badge.cssClass">{{ current.badge.label }}</span>
+      }
+    } @else {
+      <span class="ts-name text-body-secondary">No team yet</span>
+    }
+    <i class="bi bi-chevron-expand ms-auto" aria-hidden="true"></i>
+  </button>
+
+  <ul class="dropdown-menu" role="menu" aria-label="Your teams">
+    <li role="presentation"><span class="dropdown-header">Your teams</span></li>
+    @for (option of options(); track option.team.id) {
+      <li role="none">
+        <button
+          class="dropdown-item"
+          type="button"
+          role="menuitemradio"
+          [attr.aria-checked]="option.team.id === active()?.team?.id"
+          (click)="select(option.team.id)"
+        >
+          <span class="avatar avatar-team" aria-hidden="true">{{ option.initials }}</span>
+          <span class="text-truncate">{{ option.team.name }}</span>
+          @if (option.badge) {
+            <span class="badge ms-auto" [class]="option.badge.cssClass">{{
+              option.badge.label
+            }}</span>
+          }
+          <i
+            class="bi bi-check2 check"
+            [class.invisible]="option.team.id !== active()?.team?.id"
+            aria-hidden="true"
+          ></i>
+        </button>
+      </li>
+    }
+  </ul>
+</div>

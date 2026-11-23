@@ -23,6 +23,12 @@ public sealed class TestAuthHandler(
     public const string UserId = "7d6f0a2e-1b3c-4d5e-8f90-a1b2c3d4e5f6";
     public const string UserName = "Ada Lovelace";
 
+    // Adds a preferred_username claim, the sign-in address Entra puts in user tokens.
+    public const string EmailHeader = "X-Test-Email";
+
+    // Leaves out the oid claim, as an application-only token does.
+    public const string NoObjectIdHeader = "X-Test-No-Object-Id";
+
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (!Request.Headers.TryGetValue(ScopesHeader, out var scopes))
@@ -31,7 +37,17 @@ public sealed class TestAuthHandler(
         }
 
         var userId = Request.Headers.TryGetValue(UserIdHeader, out var overridden) ? overridden.ToString() : UserId;
-        Claim[] claims = [new("scp", scopes.ToString()), new("oid", userId), new("name", UserName)];
+        List<Claim> claims = [new("scp", scopes.ToString()), new("name", UserName)];
+        if (!Request.Headers.ContainsKey(NoObjectIdHeader))
+        {
+            claims.Add(new("oid", userId));
+        }
+
+        if (Request.Headers.TryGetValue(EmailHeader, out var email))
+        {
+            claims.Add(new("preferred_username", email.ToString()));
+        }
+
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, SchemeName));
 
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, SchemeName)));

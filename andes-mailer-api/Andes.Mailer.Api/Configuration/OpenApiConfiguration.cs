@@ -43,8 +43,10 @@ internal static class OpenApiConfiguration
                         flow.Pkce = Pkce.Sha256;
                         flow.SelectedScopes = [EntraOAuthEndpoints.AccessAsUserScope(azureAd)];
 
-                        // Entra matches redirect URIs exactly; each origin's /scalar is registered as a SPA redirect URI.
-                        flow.RedirectUri = $"{request.Scheme}://{request.Host}{request.PathBase}{ScalarPath}";
+                        // The trailing slash matters: Scalar redirects /scalar to /scalar/ and drops the query string,
+                        // so the sign-in popup would lose ?code= and never hand the token back. Entra matches
+                        // redirect URIs exactly; each origin's /scalar/ is registered as a SPA redirect URI.
+                        flow.RedirectUri = $"{request.Scheme}://{request.Host}{request.PathBase}{ScalarPath}/";
                     });
             }).AllowAnonymous();
         }

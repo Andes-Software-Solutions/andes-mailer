@@ -68,15 +68,148 @@ public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture, Azur
     }
 
     [Fact]
-    public async Task GetMe_TokenWithRequiredScope_ReturnsCurrentUser()
+    public async Task GetMe_TokenWithoutObjectId_ReturnsForbiddenProblem()
     {
-        await using var factory = new AndesMailerApiFactory(_fixture.ConnectionString, _azurite.ConnectionString, useTestAuthentication: true);
-        using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add(TestAuthHandler.ScopesHeader, ApiScopes.AccessAsUser);
+        await using var factory = CreateFactory();
+        using var client = CreateClient(factory, Guid.NewGuid());
+        client.DefaultRequestHeaders.Add(TestAuthHandler.NoObjectIdHeader, "true");
 
-        var user = await client.GetFromJsonAsync<CurrentUserDto>(MePath, TestContext.Current.CancellationToken);
+        using var response = await client.GetAsync(new Uri(MePath, UriKind.Relative), TestContext.Current.CancellationToken);
 
-        Assert.Equal(new CurrentUserDto(TestAuthHandler.UserId, TestAuthHandler.UserName), user);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(ProblemJson, response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task GetMe_UnknownAccount_ReturnsInactiveUserFromToken()
+    {
+        var caller = Guid.NewGuid();
+        var email = UniqueEmail();
+        await using var factory = CreateFactory();
+        using var client = CreateClient(factory, caller);
+        client.DefaultRequestHeaders.Add(TestAuthHandler.EmailHeader, email);
+
+        var user = await GetMeAsync(client);
+
+        Assert.Equal(caller, user.Id);
+        Assert.Equal(TestAuthHandler.UserName, user.Name);
+        Assert.Equal(email, user.Email);
+        Assert.False(user.IsActive);
+        Assert.Empty(user.Roles);
+        Assert.Empty(user.Permissions);
+        Assert.Empty(user.Teams);
+    }
+
+    [Fact]
+    public async Task GetMe_DeactivatedUser_ReturnsInactiveUser()
+    {
+        var caller = await SeedUserAsync(Roles.Administrator);
+        await using (var ctx = _fixture.CreateContext())
+        {
+            var row = await ctx.Users.SingleAsync(u => u.Id == caller, TestContext.Current.CancellationToken);
+            row.DateDeactivated = DateTimeOffset.UtcNow;
+            await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var email = UniqueEmail();
+        await using var factory = CreateFactory();
+        using var client = CreateClient(factory, caller);
+        client.DefaultRequestHeaders.Add(TestAuthHandler.EmailHeader, email);
+
+        var user = await GetMeAsync(client);
+
+        Assert.False(user.IsActive);
+        Assert.Equal(email, user.Email);
+        Assert.Empty(user.Roles);
+        Assert.Empty(user.Permissions);
+        Assert.Empty(user.Teams);
+    }
+
+    [Fact]
+    public async Task GetMe_Administrator_ReturnsEveryPermissionAndEveryActiveTeam()
+    {
+        var caller = await SeedUserAsync(Roles.Administrator);
+        var ownTeam = await TestCallers.SeedTeamAsync(_fixture);
+        var otherTeam = await TestCallers.SeedTeamAsync(_fixture);
+        await TestCallers.AddMembershipAsync(_fixture, ownTeam, caller, Roles.TeamMember);
+        await using var factory = CreateFactory();
+        using var client = CreateClient(factory, caller);
+
+        var user = await GetMeAsync(client);
+
+        Assert.True(user.IsActive);
+        Assert.Equal("Ada Lovelace", user.Name);
+        Assert.NotNull(user.Email);
+        Assert.Equal([Roles.Administrator], user.Roles);
+        Assert.Equal(Enum.GetValues<Permissions>(), user.Permissions);
+        var own = Assert.Single(user.Teams, t => t.Id == ownTeam);
+        Assert.Equal(Roles.TeamMember, own.Role);
+        Assert.Equal(Enum.GetValues<Permissions>(), own.Permissions);
+        var other = Assert.Single(user.Teams, t => t.Id == otherTeam);
+        Assert.Null(other.Role);
+        Assert.Equal(Enum.GetValues<Permissions>(), other.Permissions);
+    }
+
+    [Fact]
+    public async Task GetMe_TeamMember_ReturnsOnlyTheirTeamsWithTeamPermissions()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var otherTeam = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamMember);
+        await using var factory = CreateFactory();
+        using var client = CreateClient(factory, caller);
+
+        var user = await GetMeAsync(client);
+
+        Assert.True(user.IsActive);
+        Assert.Empty(user.Roles);
+        Assert.Empty(user.Permissions);
+        var only = Assert.Single(user.Teams);
+        Assert.Equal(team, only.Id);
+        Assert.DoesNotContain(user.Teams, t => t.Id == otherTeam);
+        Assert.Equal(Roles.TeamMember, only.Role);
+        Assert.Equal(
+            [Permissions.CanAttachDocuments, Permissions.ViewTeam, Permissions.ComposeTeamEmails, Permissions.DuplicateTeamEmails],
+            only.Permissions);
+    }
+
+    [Fact]
+    public async Task GetMe_TeamAdministrator_ReturnsTeamAdministratorPermissions()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        await using var factory = CreateFactory();
+        using var client = CreateClient(factory, caller);
+
+        var user = await GetMeAsync(client);
+
+        var only = Assert.Single(user.Teams);
+        Assert.Equal(Roles.TeamAdministrator, only.Role);
+        Assert.Contains(Permissions.ModifyTeamUser, only.Permissions);
+        Assert.Contains(Permissions.SendTeamEmails, only.Permissions);
+        Assert.Contains(Permissions.ManageTeamContactGroups, only.Permissions);
+        Assert.DoesNotContain(Permissions.ModifyTeam, only.Permissions);
+    }
+
+    [Fact]
+    public async Task GetMe_MemberOfDeactivatedTeam_OmitsTheTeam()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        await using (var ctx = _fixture.CreateContext())
+        {
+            var row = await ctx.Teams.SingleAsync(t => t.Id == team, TestContext.Current.CancellationToken);
+            row.DateDeactivated = DateTimeOffset.UtcNow;
+            await ctx.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        await using var factory = CreateFactory();
+        using var client = CreateClient(factory, caller);
+
+        var user = await GetMeAsync(client);
+
+        Assert.True(user.IsActive);
+        Assert.Empty(user.Teams);
     }
 
     [Fact]
@@ -348,6 +481,9 @@ public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture, Azur
 
         return client;
     }
+
+    private static async Task<CurrentUserDto> GetMeAsync(HttpClient client) =>
+        (await client.GetFromJsonAsync<CurrentUserDto>(MePath, ApiJson.Options, TestContext.Current.CancellationToken))!;
 
     private static async Task<UserDto> GetUserAsync(HttpClient client, Guid id) =>
         (await client.GetFromJsonAsync<UserDto>($"{UsersPath}/{id}", TestContext.Current.CancellationToken))!;

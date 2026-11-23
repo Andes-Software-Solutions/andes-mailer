@@ -26,7 +26,8 @@ Andes Mailer lets teams prepare email together and send it from a shared mailbox
 
 ## Features
 
-- **Microsoft Entra sign-in.** No login screen: signed-out users go straight to Entra, and the API accepts only tokens with the `access_as_user` scope. Access tokens renew in the background.
+- **Microsoft Entra sign-in.** No login screen: users who are not signed in go straight to Entra, and the API accepts only tokens with the `access_as_user` scope. Access tokens renew in the background. The UI has no sign-out, by design.
+- **App shell.** A sidebar, tablet icon rail, and phone menu built from the signed-in user's permissions, a team switcher, and light, dark, or system themes. Pages not built yet show "Coming soon".
 - **Users, roles, and permissions.** Users are added by email and looked up in Microsoft Graph. `Administrator` is a global role; `TeamAdministrator` and `TeamMember` are held per team. Every write checks a permission.
 - **Teams.** Each team sends from one verified service mailbox that no other team can use. Team routes answer 404 to anyone outside the team.
 - **Drafts.** Any team member can edit any of the team's drafts. Edits use row versions to catch conflicts, and HTML bodies are sanitized. Recipients are matched to directory accounts, and external addresses are kept as plain text.
@@ -65,7 +66,7 @@ dotnet user-secrets set "BlobStorage:ConnectionString" "UseDevelopmentStorage=tr
 dotnet user-secrets set "AzureAd:ClientSecret" "<client-secret>" --project Andes.Mailer.Api
 ```
 
-Secrets go in user secrets only, never in committed config. The API refuses to start without `SqlDb:ConnectionString` or `BlobStorage:ConnectionString`.
+Secrets go in user secrets only, never in committed config. The API refuses to start without `SqlDb:ConnectionString` or `BlobStorage:ConnectionString`. In Development, `SqlDb:ConnectionString` defaults to LocalDB (`(localdb)\MSSQLLocalDB`, database `AndesMailer`), so the `SqlDb` secret above is only needed to use a different SQL Server; other environments must always set it.
 
 ### 2. Start Azurite and apply migrations
 
@@ -89,10 +90,12 @@ npx ng serve
 
 Open `http://localhost:4200`. The UI forwards `/api/**` to `https://localhost:7093`, which only the API's `https` profile serves. Keep the UI on port 4200: `http://localhost:4200/auth` is the registered redirect URI.
 
+To debug in VS Code, open the repository root and pick **API: debug**, **UI: debug**, or the compound **API + UI: debug** in Run and Debug. Run the **azurite: start** task first (Tasks: Run Task), because the API needs Blob storage and no launch configuration starts it. Steps 1 and 2's database and user secrets still apply.
+
 | URL | What it is |
 | --- | --- |
 | `http://localhost:4200` | The UI |
-| `https://localhost:7093/scalar` | API reference (Development only) |
+| `https://localhost:7093/scalar/` | API reference (Development only) |
 | `https://localhost:7093/health/live` | Liveness: the host is up |
 | `https://localhost:7093/health/ready` | Readiness: database and blob storage |
 
@@ -122,8 +125,9 @@ npx ng test --watch=false
 
 | Topic | Covers |
 | --- | --- |
-| [Authentication](docs/authentication.md) | Entra sign-in, token validation, background renewal, configuration |
-| [Users and permissions](docs/users-and-permissions.md) | `/api/users`, directory search, roles, permission checks, Microsoft Graph setup |
+| [Authentication](docs/authentication.md) | Entra sign-in states, why there is no sign-out, accounts with no access, token validation, background renewal, configuration |
+| [UI design system](docs/ui-design-system.md) | Palette and `--am-*` tokens, dark mode, components, fonts, logo, accessibility deviations, how to add a colour or component |
+| [Users and permissions](docs/users-and-permissions.md) | `/api/users`, `GET /api/users/me`, directory search, roles, permission checks, how the UI uses permissions, Microsoft Graph setup |
 | [Teams](docs/teams.md) | `/api/teams`, members, service mailboxes, team access checks |
 | [Emails and attachments](docs/emails-and-attachments.md) | Drafts, recipients, the background upload pipeline, duplicate detection |
 | [Email templates](docs/email-templates.md) | Templates, starting a draft from one, duplicating |

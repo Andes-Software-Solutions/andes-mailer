@@ -6,6 +6,7 @@ using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Actions.Users;
 using Andes.Mailer.Dto.Pagination;
 using Andes.Mailer.Dto.Users;
+using Andes.Mailer.Service.Security;
 using Andes.Mailer.Service.Users;
 
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -18,10 +19,12 @@ internal static class UserEndpoints
     #region Private methods
 
     // The name claim first: GetDisplayName prefers preferred_username, the sign-in address.
-    private static Ok<CurrentUserDto> GetCurrentUser(ClaimsPrincipal user) =>
-        TypedResults.Ok(new CurrentUserDto(
-            user.GetObjectId() ?? string.Empty,
-            user.FindFirstValue(ClaimConstants.Name) ?? user.GetDisplayName() ?? string.Empty));
+    private static async Task<Ok<CurrentUserDto>> GetCurrentUser(ClaimsPrincipal caller, ICurrentUserService currentUser, CancellationToken cancellationToken) =>
+        TypedResults.Ok(await currentUser.GetAsync(
+            caller.GetCallerId(),
+            caller.FindFirstValue(ClaimConstants.Name) ?? caller.GetDisplayName() ?? string.Empty,
+            caller.FindFirstValue(ClaimConstants.PreferredUserName),
+            cancellationToken));
 
     private static async Task<Ok<PaginatedResponseDto<UserDto>>> ListUsers([AsParameters] ListUsersActionDto action, IUserService users, CancellationToken cancellationToken) =>
         TypedResults.Ok(await users.ListAsync(action, cancellationToken));
@@ -66,7 +69,8 @@ internal static class UserEndpoints
 
         group.MapGet("/me", GetCurrentUser)
             .WithName(nameof(GetCurrentUser))
-            .WithSummary("Gets the signed-in user.");
+            .WithSummary("Gets the signed-in user with their global roles and permissions, and the teams they can see with their permissions in each.")
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         group.MapGet("/", ListUsers)
             .AddEndpointFilter<ValidationEndpointFilter<ListUsersActionDto>>()

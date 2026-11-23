@@ -1,14 +1,30 @@
-<main class="container py-4">
-  <h1 class="h3">We couldn't sign you in</h1>
-  <p>Sign-in with your work account didn't finish.</p>
+<app-sign-in-layout>
+  <div class="alert alert-danger text-start mb-0" role="alert">
+    <i class="bi bi-x-circle-fill" aria-hidden="true"></i>
+    <div>
+      <strong>We couldn't sign you in.</strong>
+      Microsoft didn't confirm your account. This can happen if the sign-in page was closed or timed
+      out.
+    </div>
+  </div>
 
-  @if (retryFailed()) {
-    <p class="text-danger-emphasis" role="alert">
-      We couldn't reach Microsoft. Check your connection, then reload this page.
-    </p>
-  } @else {
-    <button class="btn btn-primary" type="button" [disabled]="retrying()" (click)="retry()">
-      Try again
-    </button>
-  }
-</main>
+  <!-- Always rendered: screen readers announce text added to a live region, not a new region. -->
+  <div role="status">
+    @if (retryFailed()) {
+      <p #failure class="text-danger-emphasis mb-0" tabindex="-1">
+        We couldn't reach Microsoft. Check your connection and try again. If it keeps failing,
+        reload this page.
+      </p>
+    }
+  </div>
+
+  <button
+    class="btn btn-primary btn-lg w-100"
+    type="button"
+    [disabled]="retrying()"
+    (click)="retry()"
+  >
+    <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+    Try again
+  </button>
+</app-sign-in-layout>

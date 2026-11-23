@@ -1,45 +1,42 @@
-import { DOCUMENT, Location } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
-import { MsalService } from '@azure/msal-angular';
-import { APP_CONFIG } from '@core/config/app-config-token';
-import { routePaths } from '@core/navigation/route-paths';
-import { firstValueFrom } from 'rxjs';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { SessionStore } from '@core/auth/session-store';
+import { SignInLayout } from '@shared/sign-in-layout/sign-in-layout';
 
 /** Unguarded: a guard would send a user whose sign-in just failed straight back to Entra. */
 @Component({
   selector: 'app-login-failed',
+  imports: [SignInLayout],
   templateUrl: './login-failed.html',
 })
 export class LoginFailed {
-  private readonly _msal = inject(MsalService);
-  private readonly _scopes = [...inject(APP_CONFIG).auth.apiScopes];
-  private readonly _location = inject(Location);
-  private readonly _document = inject(DOCUMENT);
+  private readonly _session = inject(SessionStore);
+  private readonly _injector = inject(Injector);
+  private readonly _failure = viewChild<ElementRef<HTMLElement>>('failure');
 
   /** Latches, so a second press cannot start a second redirect over the first. */
   protected readonly retrying = signal(false);
 
-  /** MSAL's redirect lock has no release API, so after this only a reload can try again. */
   protected readonly retryFailed = signal(false);
 
   protected async retry(): Promise<void> {
     this.retrying.set(true);
 
     try {
-      await firstValueFrom(
-        this._msal.loginRedirect({
-          scopes: this._scopes,
-          // The home page, not this one: MSAL returns to the page a sign-in names as its start.
-          redirectStartPage: new URL(
-            this._location.prepareExternalUrl(routePaths.home),
-            this._document.baseURI,
-          ).href,
-        }),
-      );
+      await this._session.signIn();
     } catch (cause) {
       console.error(cause);
       this.retrying.set(false);
       this.retryFailed.set(true);
+      // Disabling the button dropped its focus; the message is where the person continues.
+      afterNextRender(() => this._failure()?.nativeElement.focus(), { injector: this._injector });
     }
   }
 }

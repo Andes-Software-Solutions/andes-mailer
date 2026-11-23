@@ -1,13 +1,16 @@
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { IPublicClientApplication } from '@azure/msal-browser';
+import { Shell } from '@core/layout/shell';
+import { SignInStatus } from '@core/layout/sign-in-status';
 import { LoginFailed } from '@features/auth/login-failed';
-import { Home } from '@features/home/home';
+import { NoAccess } from '@features/auth/no-access';
 import { provideTestAppConfig, testApiScope } from '@testing/app-config';
 import { provideFakeMsal, signedInMsal, signedOutMsal } from '@testing/msal';
+import { adminUser, meUrl, memberUser, noAccessUser, seedSession } from '@testing/session';
 import { vi } from 'vitest';
 import { routes } from './app.routes';
 
@@ -17,7 +20,7 @@ describe('routes', () => {
       providers: [
         provideTestAppConfig(),
         provideFakeMsal(instance),
-        provideRouter(routes),
+        provideRouter(routes, withComponentInputBinding()),
         provideHttpClient(),
         provideHttpClientTesting(),
       ],
@@ -26,8 +29,18 @@ describe('routes', () => {
     return RouterTestingHarness.create();
   }
 
+  function path(): string {
+    return TestBed.inject(Router).url;
+  }
+
+  /** The page the shell renders, by its selector. */
+  function page(harness: RouterTestingHarness, selector: string): Element | null {
+    return harness.routeNativeElement?.querySelector(selector) ?? null;
+  }
+
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -45,10 +58,84 @@ describe('routes', () => {
     expect(harness.routeDebugElement).toBeNull();
   });
 
-  it('opens home for a signed-in user', async () => {
+  it('loads the account after sign-in, then opens home', async () => {
     const harness = await setup(signedInMsal());
+    const backend = TestBed.inject(HttpTestingController);
 
-    await expect(harness.navigateByUrl('/', Home)).resolves.toBeInstanceOf(Home);
+    const navigation = harness.navigateByUrl('/', Shell);
+    await vi.waitFor(() => backend.expectOne(meUrl).flush(memberUser));
+    await navigation;
+
+    expect(page(harness, 'app-home')).not.toBeNull();
+  });
+
+  it('resumes the page a failed account load cancelled once the retry succeeds', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = await setup(signedInMsal());
+    const backend = TestBed.inject(HttpTestingController);
+
+    const navigation = harness.navigateByUrl('/drafts');
+    await vi.waitFor(() =>
+      backend.expectOne(meUrl).flush(null, { status: 503, statusText: 'Unavailable' }),
+    );
+    await navigation;
+    const splash = TestBed.createComponent(SignInStatus);
+    await splash.whenStable();
+
+    (splash.nativeElement as HTMLElement)
+      .querySelector<HTMLButtonElement>('button.btn-primary')
+      ?.click();
+    await vi.waitFor(() => backend.expectOne(meUrl).flush(memberUser));
+
+    await vi.waitFor(async () => {
+      await harness.fixture.whenStable();
+      expect(path()).toBe('/drafts');
+      expect(page(harness, 'app-coming-soon')).not.toBeNull();
+    });
+  });
+
+  it('sends an account without access to the no-access page', async () => {
+    const harness = await setup(signedInMsal());
+    seedSession(noAccessUser);
+
+    await expect(harness.navigateByUrl('/', NoAccess)).resolves.toBeInstanceOf(NoAccess);
+    expect(path()).toBe('/no-access');
+  });
+
+  it('sends an account with access away from the no-access page', async () => {
+    const harness = await setup(signedInMsal());
+    seedSession(memberUser);
+
+    await harness.navigateByUrl('/no-access', Shell);
+
+    expect(page(harness, 'app-home')).not.toBeNull();
+  });
+
+  it('opens a page the active team permits', async () => {
+    const harness = await setup(signedInMsal());
+    seedSession(memberUser);
+
+    await harness.navigateByUrl('/drafts', Shell);
+
+    expect(page(harness, 'app-coming-soon')?.textContent).toContain('Drafts');
+  });
+
+  it('sends a member away from a page their team role does not permit', async () => {
+    const harness = await setup(signedInMsal());
+    seedSession(memberUser);
+
+    await harness.navigateByUrl('/team/members');
+
+    expect(path()).toBe('/');
+  });
+
+  it('opens administration pages for an administrator', async () => {
+    const harness = await setup(signedInMsal());
+    seedSession(adminUser);
+
+    await harness.navigateByUrl('/team/members', Shell);
+
+    expect(page(harness, 'app-coming-soon')?.textContent).toContain('Team members');
   });
 
   it('sends a sign-in that came back failed to the failure page', async () => {
@@ -68,5 +155,15 @@ describe('routes', () => {
       LoginFailed,
     );
     expect(loginRedirect).not.toHaveBeenCalled();
+  });
+
+  it('sends an unknown address home', async () => {
+    const harness = await setup(signedInMsal());
+    seedSession(memberUser);
+
+    await harness.navigateByUrl('/nowhere', Shell);
+
+    expect(path()).toBe('/');
+    expect(page(harness, 'app-home')).not.toBeNull();
   });
 });

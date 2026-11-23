@@ -1,1 +1,8 @@
-<router-outlet />
+<!-- The routed page renders beside the outlet, not inside it, so the wrapper is what goes inert. -->
+<div [attr.inert]="session.signInPhase() !== 'none' ? '' : null">
+  <router-outlet />
+</div>
+
+@if (session.signInPhase() !== 'none') {
+  <app-sign-in-status />
+}

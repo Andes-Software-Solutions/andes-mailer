@@ -1,0 +1,59 @@
+.user-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.75rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+  border: 1px solid transparent;
+  border-radius: 50rem;
+  background: none;
+  color: var(--bs-body-color);
+
+  &:hover,
+  &[aria-expanded='true'] {
+    border-color: var(--bs-border-color);
+    background-color: var(--am-field);
+  }
+
+  > .bi {
+    color: var(--am-icon);
+  }
+}
+
+.user-meta {
+  flex-direction: column;
+  max-width: 12rem;
+  text-align: start;
+}
+
+.um-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+}
+
+.um-title {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--bs-secondary-color);
+}
+
+.dropdown-menu {
+  width: 272px;
+  max-width: calc(100vw - 2rem);
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.625rem;
+}
+
+.min-w-0 {
+  min-width: 0;
+}
+
+.check {
+  color: var(--am-accent);
+}

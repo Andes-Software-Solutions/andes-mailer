@@ -3,6 +3,7 @@ import { bootstrapApplication } from '@angular/platform-browser';
 import { completeRedirect, isRedirectUrl } from '@core/auth/redirect-bridge';
 import { APP_CONFIG } from '@core/config/app-config-token';
 import { loadAppConfig } from '@core/config/load-app-config';
+import { applyInitialTheme } from '@core/theme/theme-preference';
 import { appConfig } from './app/app.config';
 import { App } from './app/app';
 
@@ -14,6 +15,8 @@ async function start(): Promise<void> {
 
     return;
   }
+
+  applyInitialTheme(document);
 
   const config = await loadAppConfig(baseUri);
 

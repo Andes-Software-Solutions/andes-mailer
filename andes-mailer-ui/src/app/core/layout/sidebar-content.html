@@ -1,0 +1,80 @@
+<div class="head">
+  <a class="logo-link" routerLink="/" aria-label="Andes Mailer home" (click)="dismiss()">
+    <app-logo class="rail-hide" [height]="28" />
+    @if (isRail()) {
+      <app-logo class="rail-only" [height]="18" [wordmark]="false" />
+    }
+  </a>
+  @if (!isRail()) {
+    <button
+      class="btn btn-ghost btn-icon ms-auto"
+      type="button"
+      aria-label="Close menu"
+      (click)="dismiss()"
+    >
+      <i class="bi bi-x-lg" aria-hidden="true"></i>
+    </button>
+  }
+</div>
+
+<app-ridgeline class="ridge rail-hide" />
+
+<app-team-switcher class="rail-hide" />
+
+<a
+  *appHasPermission="'ComposeTeamEmails'"
+  class="btn btn-primary btn-lg new-email"
+  [routerLink]="'/' + paths.compose"
+  [appRailTooltip]="isRail() ? 'New email' : ''"
+  (click)="dismiss()"
+>
+  <i class="bi bi-pencil-square" aria-hidden="true"></i>
+  <span class="nav-text">New email</span>
+</a>
+
+<nav class="nav-list" aria-label="Main">
+  @for (item of mainItems(); track item.path) {
+    <a
+      class="nav-item"
+      [routerLink]="'/' + item.path"
+      routerLinkActive="is-active"
+      ariaCurrentWhenActive="page"
+      [appRailTooltip]="isRail() ? item.label : ''"
+      (click)="dismiss()"
+    >
+      <i class="bi" [class]="'bi-' + item.icon" aria-hidden="true"></i>
+      <span class="nav-text">{{ item.label }}</span>
+    </a>
+  }
+
+  @if (adminItems().length > 0) {
+    <div class="nav-label t-micro" role="presentation">Administration</div>
+    @for (item of adminItems(); track item.path) {
+      <a
+        class="nav-item"
+        [routerLink]="'/' + item.path"
+        routerLinkActive="is-active"
+        ariaCurrentWhenActive="page"
+        [appRailTooltip]="isRail() ? item.label : ''"
+        (click)="dismiss()"
+      >
+        <i class="bi" [class]="'bi-' + item.icon" aria-hidden="true"></i>
+        <span class="nav-text">{{ item.label }}</span>
+      </a>
+    }
+  }
+</nav>
+
+<div class="foot">
+  <a
+    class="nav-item"
+    [routerLink]="'/' + paths.help"
+    routerLinkActive="is-active"
+    ariaCurrentWhenActive="page"
+    [appRailTooltip]="isRail() ? 'Help & guides' : ''"
+    (click)="dismiss()"
+  >
+    <i class="bi bi-question-circle" aria-hidden="true"></i>
+    <span class="nav-text">Help &amp; guides</span>
+  </a>
+</div>

@@ -1,0 +1,52 @@
+:host {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.mark {
+  flex: none;
+}
+
+.mark-dark {
+  display: none;
+}
+
+:host-context([data-bs-theme='dark']) {
+  .mark-light {
+    display: none;
+  }
+
+  .mark-dark {
+    display: block;
+  }
+}
+
+.word {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-family: Montserrat, 'Segoe UI', system-ui, sans-serif;
+}
+
+.name {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  letter-spacing: -0.01em;
+  color: var(--bs-heading-color);
+
+  b {
+    color: var(--bs-primary-text-emphasis);
+  }
+}
+
+.sub {
+  font-size: 0.59375rem;
+  font-weight: 600;
+  line-height: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}

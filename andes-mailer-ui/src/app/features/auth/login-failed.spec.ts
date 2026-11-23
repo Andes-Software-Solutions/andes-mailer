@@ -1,15 +1,15 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { IPublicClientApplication } from '@azure/msal-browser';
-import { provideTestAppConfig } from '@testing/app-config';
-import { provideFakeMsal, signedOutMsal } from '@testing/msal';
+import { signedOutMsal } from '@testing/msal';
+import { provideSessionTesting } from '@testing/session';
 import { vi } from 'vitest';
 import { LoginFailed } from './login-failed';
 
 describe('LoginFailed', () => {
-  async function render(instance: IPublicClientApplication): Promise<ComponentFixture<LoginFailed>> {
-    TestBed.configureTestingModule({
-      providers: [provideTestAppConfig(), provideFakeMsal(instance)],
-    });
+  async function render(
+    instance: IPublicClientApplication,
+  ): Promise<ComponentFixture<LoginFailed>> {
+    TestBed.configureTestingModule({ providers: provideSessionTesting(instance) });
 
     const fixture = TestBed.createComponent(LoginFailed);
     await fixture.whenStable();
@@ -17,8 +17,12 @@ describe('LoginFailed', () => {
     return fixture;
   }
 
+  function element(fixture: ComponentFixture<LoginFailed>): HTMLElement {
+    return fixture.nativeElement as HTMLElement;
+  }
+
   function button(fixture: ComponentFixture<LoginFailed>): HTMLButtonElement | null {
-    return (fixture.nativeElement as HTMLElement).querySelector('button');
+    return element(fixture).querySelector('button');
   }
 
   beforeEach(() => {
@@ -28,6 +32,14 @@ describe('LoginFailed', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('says the sign-in failed', async () => {
+    const fixture = await render(signedOutMsal());
+
+    expect(element(fixture).querySelector('[role=alert]')?.textContent).toContain(
+      "We couldn't sign you in.",
+    );
   });
 
   it('retries towards home, not back to this page', async () => {
@@ -53,17 +65,20 @@ describe('LoginFailed', () => {
     expect(button(fixture)?.disabled).toBe(true);
   });
 
-  it('tells the user to reload when Microsoft cannot be reached', async () => {
+  it('announces and focuses the failure when Microsoft cannot be reached', async () => {
     const fixture = await render(
       signedOutMsal({ loginRedirect: () => Promise.reject(new Error('endpoints_resolution')) }),
     );
+    const status = element(fixture).querySelector('[role=status]');
 
     button(fixture)?.click();
     await vi.waitFor(async () => {
       await fixture.whenStable();
-      expect((fixture.nativeElement as HTMLElement).querySelector('[role=alert]')).not.toBeNull();
+      expect(element(fixture).querySelector('[role=status]')).toBe(status);
+      expect(status?.textContent).toContain("We couldn't reach Microsoft.");
+      expect(document.activeElement).toBe(status?.querySelector('p'));
     });
 
-    expect(button(fixture)).toBeNull();
+    expect(button(fixture)?.disabled).toBe(false);
   });
 });
