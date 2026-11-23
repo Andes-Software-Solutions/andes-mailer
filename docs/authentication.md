@@ -1,6 +1,6 @@
 # Authentication
 
-Both apps sign users in with Microsoft Entra ID. The UI has no login screen: a signed-out user goes straight to Microsoft, and the API accepts only tokens that carry the `access_as_user` scope. This page explains how the pieces fit, what the Entra app registration and the host must provide, and what is still missing.
+Both apps sign users in with Microsoft Entra ID. The UI has no login form: a user who is not signed in goes straight to Microsoft, and the API accepts only tokens that carry the `access_as_user` scope. The UI also has no sign-out, by design. This page explains how the pieces fit, which screens cover each sign-in state (including accounts with no access), why there is no sign-out and what that means on a shared computer, what the Entra app registration and the host must provide, and what is still missing.
 
 ## How sign-in works
 
@@ -14,12 +14,12 @@ The UI uses [`@azure/msal-angular`](https://learn.microsoft.com/en-us/entra/msal
 - `MsalService`, `MsalGuard`, `MsalBroadcastService`, and `MsalInterceptor`.
 - An app initializer that handles the redirect response; see [What the initializer does](#what-the-initializer-does).
 
-The sequence for a signed-out user:
+The sequence for a user who is not signed in:
 
-1. The user opens a guarded route. `authGuard` (`src/app/core/auth/auth-guard.ts`), a functional wrapper around `MsalGuard`, finds no account and starts an MSAL `loginRedirect` to Entra. The router stays put while the browser leaves.
+1. The user opens a guarded route. `authGuard` (`src/app/core/auth/auth-guard.ts`), a functional wrapper around `MsalGuard`, finds no account and starts an MSAL `loginRedirect` to Entra. The router stays put while the browser leaves, and the [sign-in splash](#sign-in-states) covers the page.
 2. Entra returns the browser to `<origin>/auth`. That path has no Angular route.
 3. `src/main.ts` checks the URL before Angular boots. On `/auth` it runs MSAL's redirect bridge (`broadcastResponseToMainFrame`), which sends the browser back to the page that started the sign-in. The same code serves the hidden iframe of a silent token renewal, where the bridge posts the response to the waiting main frame. If `/auth` carries no response (for example, someone opened it directly), the app logs the error and navigates to `/login-failed`.
-4. On the starting page, `main.ts` loads `config.json` and boots Angular. It does not create or initialize MSAL; MSAL Angular initializes the instance on first use. The app initializer processes the response, the guard sees the account, and the route loads.
+4. On the starting page, `main.ts` applies the saved theme, loads `config.json`, and boots Angular. It does not create or initialize MSAL; MSAL Angular initializes the instance on first use. The app initializer processes the response, the guard sees the account, `accessGuard` loads `GET /api/users/me`, and the route loads.
 5. `authInterceptor` (`src/app/core/auth/auth-interceptor.ts`), a functional wrapper around `MsalInterceptor`, adds `Authorization: Bearer <token>` to requests that match `protectedResourceMap`, which means URLs under `/api/`. Requests to `config.json` or any other host never get a token. If Entra needs interaction, MSAL starts `acquireTokenRedirect`.
 
 Why the bridge still runs first: the router could rewrite the hash the bridge reads, and a hidden renewal iframe has no use for the rest of the app.
@@ -32,9 +32,41 @@ The initializer in `provideMsal()` is what Microsoft puts in a standalone app's 
 - It selects the active account on `LOGIN_SUCCESS` and `ACQUIRE_TOKEN_SUCCESS`.
 - It selects the first cached account when `inProgress$` reaches `None` and none is active, such as on a reload of a signed-in tab.
 
-### The login-failed page
+### Sign-in states
 
-`/login-failed` is the only sign-in screen and the only unguarded route; keep every other route behind `authGuard`. The guard sends users there when sign-in fails, and the redirect bridge does the same for a bare `/auth`. Its "Try again" button calls `MsalService.loginRedirect` and lands on the home page. If that call rejects, the page shows an error and only a reload can try again, because MSAL has no API to release its redirect lock.
+There is no login form, but the person is not left on a blank page. A sign-in splash and two pages cover every state between "not signed in" and "using the app". They share one card layout (`SignInLayout`, `src/app/shared/sign-in-layout/`), and `SessionStore` (`src/app/core/auth/session-store.ts`) decides which one shows.
+
+| State | Where | What the person sees |
+| --- | --- | --- |
+| Going to Microsoft | Splash over the app | "Taking you to Microsoft to sign in…" with a progress bar. Under it, "Not redirected? **Continue to Microsoft**" restarts the sign-in if the browser did not leave. |
+| Back from Microsoft | Splash over the app | "Signing you in… Getting your teams ready" while the response is processed and `GET /api/users/me` loads. |
+| The account did not load | Splash over the app | "We couldn't load your account" with **Try again**. The retry reloads the account and resumes the page the person was opening. |
+| Sign-in failed | `/login-failed` | "We couldn't sign you in." **Try again** calls `loginRedirect` and lands on the home page. |
+| No access | `/no-access` | "This account can't use Andes Mailer yet", with the account's address and **Use a different account**. |
+
+**The splash.** `SignInStatus` (`src/app/core/layout/sign-in-status.ts`) sits over the router outlet in `app.html` whenever `SessionStore.signInPhase()` is not `none`. The phase comes from MSAL's interaction status (`MsalBroadcastService.inProgress$` as a signal) and the account load's status. MSAL v5 reports a redirect as `AcquireToken`, which maps to "redirecting"; `Startup` and `HandleRedirect` map to "signing in"; a failed account load maps to the error state. Silent token renewal raises no status, so it never flashes the splash.
+
+**Why the retry is in the store.** When `GET /api/users/me` fails, `accessGuard` cancels the navigation, and the router resets the URL, so the page the person wanted is gone. The guard hands that URL to `SessionStore.holdForRetry`, and **Try again** navigates to it with `onSameUrlNavigation: 'reload'`, so the guards run again.
+
+**`/login-failed`.** The guard sends users here when sign-in fails, and the redirect bridge does the same for a bare `/auth`. **Try again** goes through `SessionStore.signIn()`, which calls `MsalService.loginRedirect`. If that call rejects, the page shows an error and only a reload can try again, because MSAL has no API to release its redirect lock.
+
+**Unguarded routes.** `login-failed` is the only route without `authGuard`; keep every other route behind it. A guard on it would send a person whose sign-in just failed straight back to Entra. An old bookmark to a route that no longer exists, such as `/signed-out`, matches the `**` wildcard and goes home, where `authGuard` takes over.
+
+### No sign-out
+
+The UI never offers sign-out, by design. The account menu holds only **My profile** and the **Theme** choice (Light, Dark, Same as system). There is no sign-out button, no `logoutRedirect` call, and no `/signed-out` page or redirect URI. Do not add them without a new product decision.
+
+People who need another account use **Use a different account** on the [no-access page](#accounts-with-no-access), which shows Entra's account picker (`prompt=select_account`). A failed sign-in has **Try again** on `/login-failed`. Neither ends the Entra session.
+
+Where this matters: a shared computer. Closing the tab drops the tokens the UI holds, because they live in `sessionStorage`. But the Entra session cookie stays in the browser, so the next person who opens the app in that browser can be signed in as the previous one without a prompt. On a shared computer, use a private browser window and close it when you finish, or end the Microsoft session yourself, for example by signing out of your Microsoft account at `https://myaccount.microsoft.com`.
+
+Telemetry follows the same rule: it clears the user when MSAL reports no account. The `LOGOUT_SUCCESS` listener in `provide-telemetry.ts` is dormant; see [UI telemetry](telemetry/ui.md#the-signed-in-user).
+
+### Accounts with no access
+
+Entra proves who someone is; the API's user table decides whether they may use the app (see [Users and permissions](users-and-permissions.md)). An account with a valid token and no active `[Core].[User]` row gets `isActive: false` from `GET /api/users/me`, with empty roles, permissions, and teams.
+
+For that account, `accessGuard` on the shell redirects every route to `/no-access`. The page names the account and offers **Use a different account**, which calls `loginRedirect` with `prompt=select_account` so Entra shows its account picker instead of signing in silently as the same account. `/no-access` is behind `authGuard` and `noAccessGuard`: an account that does have access and opens it by hand goes home. Both are `canActivateChild` guards on purpose: guards in one `canActivate` array run concurrently, and the account load needs the token that `authGuard` obtains first, so a child guard runs only after `authGuard` has finished.
 
 ### Back from the Microsoft page
 
@@ -63,7 +95,7 @@ Entra's refresh tokens for a single-page application expire 24 hours after sign-
 
 Because the fallback policy also covers unmatched routes, an anonymous request to an unknown route now returns 401 instead of 404. An authenticated caller with the scope still gets 404.
 
-`GET /api/users/me` returns the caller's object id and display name; the UI shows the name on the home page. A valid token proves who the caller is; what they may do is decided by roles and permissions, described in [Users and permissions](users-and-permissions.md).
+`GET /api/users/me` returns the caller's profile, global roles and permissions, and teams with their permissions; the UI loads it once after sign-in and builds its navigation from it. A valid token proves who the caller is; what they may do is decided by roles and permissions, described in [Users and permissions](users-and-permissions.md#get-the-signed-in-user).
 
 Besides validating tokens, the API acts as itself when it calls Microsoft Graph (to look up a directory account when someone adds a user). That app-only call uses the same registration and needs its own credential; see [Configuration](#configuration).
 
@@ -73,7 +105,7 @@ In Development, `/scalar` is the API reference, and you can call protected endpo
 
 1. Add the two Scalar redirect URIs described in [Entra app registration requirements](#entra-app-registration-requirements).
 2. From `andes-mailer-api/`, start the API on the `https` profile: `dotnet run --launch-profile https --project Andes.Mailer.Api`.
-3. Open `https://localhost:7093/scalar`.
+3. Open `https://localhost:7093/scalar/` (with the trailing slash).
 4. Open **Authentication**, choose **Entra**, and select **Authorize**.
 5. Sign in to Microsoft in the popup. Scalar receives the token when the popup closes.
 6. Pick an endpoint, for example `GET /api/users/me`, and select **Try It**.
@@ -84,6 +116,7 @@ How it works, and what to expect:
 
 - Scalar uses the same registration as the UI (`AzureAd:ClientId`) as a public client: authorization code with PKCE (SHA-256) and no client secret. There is no Scalar proxy, so the browser redeems the code with Entra directly, which Entra allows only for a single-page application redirect URI.
 - Authentication is not persisted: `EnablePersistentAuthentication()` is off, so Scalar never writes the token to `localStorage`. Expect to sign in again after a reload.
+- The redirect URI ends in a slash (`<origin>/scalar/`) on purpose. Scalar.AspNetCore redirects `/scalar` to `/scalar/` and drops the query string, so a redirect URI without the slash loses the authorization code (`?code=...`) on the way back from Entra. The symptom is a popup that stays open showing Scalar instead of closing, while the main Scalar tab never receives a token. `OpenApiConfiguration` builds the URI with the slash, so keep the registration in step with it.
 - The scheme exists only in Development, where Scalar is mapped. Token validation in the API did not change.
 
 ## Configuration
@@ -106,14 +139,14 @@ The Entra values (`Instance`, `TenantId`, `ClientId`, `clientId`, `authority`, `
 - **Redirect URI.** `http://localhost:4200/auth` must be registered as a **single-page application** redirect URI, so serve the UI on port 4200. If it is missing, sign-in fails with `AADSTS50011`. Entra matches the URI exactly.
 - **Exposed scope.** The registration exposes `access_as_user`, and `apiScopes` in `config.json` requests `api://<clientId>/access_as_user`.
 - **Graph permission.** The registration needs the Microsoft Graph **application** permission `User.Read.All`, with admin consent granted, and a credential (a client secret for local work). See [Users and permissions](users-and-permissions.md#microsoft-graph-setup).
-- **Scalar redirect URIs.** Register `https://localhost:7093/scalar` and `http://localhost:5145/scalar` as **single-page application** redirect URIs (the `https` and `http` launch profiles). Scalar sends `<request origin>/scalar` as the redirect URI, and Entra matches it exactly. If one is missing, or is registered under the Web platform, sign-in fails with `AADSTS50011`.
+- **Scalar redirect URIs.** Register `https://localhost:7093/scalar/` and `http://localhost:5145/scalar/` as **single-page application** redirect URIs (the `https` and `http` launch profiles), trailing slash included. Scalar sends `<request origin>/scalar/` as the redirect URI, and Entra matches it exactly. If one is missing, is registered without the slash, or is registered under the Web platform, sign-in fails with `AADSTS50011`. Earlier versions used the no-slash form; remove those registrations once you have added the new ones. See [Calling the API from Scalar](#calling-the-api-from-scalar) for why the slash matters.
 - **Other environments.** Each deployed environment needs its own `<origin>/auth` registered and its own `config.json` with the right values.
 
 ## Production host requirements
 
 No deployment configuration exists in this repository yet. Whatever hosts the UI must:
 
-- Serve `/auth` as `index.html`. The app has no separate bridge page; `main.ts` detects the path, so `/auth` must fall through to the SPA entry point.
+- Serve `/auth` as `index.html`. The app has no separate bridge page; `main.ts` detects the path, so `/auth` must fall through to the SPA entry point. `/login-failed` and `/no-access` are ordinary Angular routes, so the host's SPA fallback must serve them too.
 - Send `Cache-Control: no-store` on `/auth`, so caches never keep a URL that carries an authorization response.
 - Send no `Cross-Origin-Opener-Policy` header on `/auth`, because it breaks the channel back to the main app.
 
@@ -121,7 +154,7 @@ Both header rules come from MSAL's [redirect bridge documentation](https://raw.g
 
 ## Known limitations
 
-- **No sign-out.** Because `authGuard` redirects automatically, a sign-out added later must land on a page that does not auto-redirect, or the user is signed straight back in.
+- **No sign-out.** The UI offers none, so on a shared computer the Entra session outlives the tab, and the API accepts a token that was already issued until it expires. See [No sign-out](#no-sign-out).
 - **No renewal ahead of time, no 401 retry.** The UI renews a token only when a request needs one, and a 401 from the API reaches the caller as it is; see [Token renewal](#token-renewal).
 - **Shared app registration.** Both apps currently use the registration that `enterprise-gpt` uses, so a token issued for one app is accepted by the other's API. andes-mailer needs its own registration before production.
 - **The API needs a secret.** The API cannot start Graph lookups without `AzureAd:ClientSecret`, which lives in user secrets, never in committed configuration. Because the registration is shared with `enterprise-gpt`, the secret and the `User.Read.All` consent apply to that app too, one more reason to give andes-mailer its own registration.

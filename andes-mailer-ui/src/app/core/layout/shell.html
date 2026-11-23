@@ -1,0 +1,70 @@
+<div class="app">
+  <aside class="sidebar d-none d-md-flex" aria-label="Sidebar">
+    <app-sidebar-content variant="sidebar" />
+  </aside>
+
+  <div class="main">
+    <header class="topbar d-none d-md-flex">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <span class="cur" aria-current="page">{{ pageLabel() }}</span>
+      </nav>
+      <div class="rail-team d-none d-md-flex d-lg-none">
+        <span class="vr"></span>
+        <app-team-switcher compact />
+      </div>
+      <div class="ms-auto d-flex align-items-center gap-1">
+        <app-theme-toggle />
+        <a class="btn btn-ghost btn-icon" [routerLink]="'/' + paths.help" aria-label="Help">
+          <i class="bi bi-question-circle" aria-hidden="true"></i>
+        </a>
+        <span class="vr mx-2"></span>
+        <app-user-menu />
+      </div>
+    </header>
+
+    <header class="mtop d-md-none">
+      <button
+        #menuButton
+        class="btn btn-ghost btn-icon"
+        type="button"
+        aria-label="Open menu"
+        aria-controls="app-menu"
+        (click)="openMenu()"
+      >
+        <i class="bi bi-list" aria-hidden="true"></i>
+      </button>
+      <div class="mtop-title">
+        <app-logo [height]="18" [wordmark]="false" />
+        <span class="text-truncate">{{ pageLabel() }}</span>
+      </div>
+      <app-user-menu compact />
+    </header>
+
+    <main #main class="content" tabindex="-1">
+      <div class="page">
+        <router-outlet />
+      </div>
+    </main>
+  </div>
+
+  <div
+    #menu
+    id="app-menu"
+    class="offcanvas offcanvas-start d-md-none"
+    tabindex="-1"
+    aria-label="Menu"
+  >
+    <div class="offcanvas-body">
+      <app-sidebar-content variant="offcanvas" (dismissed)="closeMenu()" />
+    </div>
+  </div>
+
+  <a
+    *appHasPermission="'ComposeTeamEmails'"
+    class="fab btn btn-primary d-md-none"
+    [routerLink]="'/' + paths.compose"
+    aria-label="New email"
+  >
+    <i class="bi bi-pencil" aria-hidden="true"></i>
+  </a>
+</div>

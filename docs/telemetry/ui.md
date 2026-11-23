@@ -74,7 +74,7 @@ A route change in a single-page app can report a `duration` of 0 on `pageViews`;
 The user is set to the Entra object id from the MSAL account, `idTokenClaims.oid`, with `localAccountId` as the fallback. Never the name or the username.
 
 - It is set when the UI restores a session (MSAL reports `InteractionStatus.None` with an account) and on `LOGIN_SUCCESS`.
-- It is cleared on `LOGOUT_SUCCESS`, or when nobody is signed in.
+- It is cleared when MSAL reports no account. The UI has no sign-out, so nothing in the app raises `LOGOUT_SUCCESS`; the listener for it in `provide-telemetry.ts` is dormant.
 - An interactive sign-in also records the custom event `UserSignedIn`. A restored session records none, so `UserSignedIn` counts sign-ins, not active users.
 - The user context is stored in a cookie (`setAuthenticatedUserContext(oid, undefined, true)`), so items sent before the next account check still carry the user.
 

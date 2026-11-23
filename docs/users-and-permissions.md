@@ -1,6 +1,6 @@
 # Users and permissions
 
-Signing in with Entra proves who someone is; it says nothing about what they may do. The API keeps its own list of users, gives them roles, and checks a permission before each change to that list, to a team, and to its emails. This page covers the data model, the `/api/users` endpoints (including the directory search that backs recipient autocomplete), how permission checks work, and the Microsoft Graph setup that adding a user needs. For how tokens are issued and validated, see [Authentication](authentication.md). For teams and their members, see [Teams](teams.md). For the endpoints that check `ComposeTeamEmails`, `CanAttachDocuments`, and `DuplicateTeamEmails` on emails, see [Emails and attachments](emails-and-attachments.md). For the ones that check `ManageTeamTemplates` and `DuplicateTeamEmails` on templates, see [Email templates](email-templates.md). For the ones that check `ManageTeamContactGroups`, see [Contact groups](contact-groups.md).
+Signing in with Entra proves who someone is; it says nothing about what they may do. The API keeps its own list of users, gives them roles, and checks a permission before each change to that list, to a team, and to its emails. This page covers the data model, the `/api/users` endpoints (including the directory search that backs recipient autocomplete), how permission checks work, and the Microsoft Graph setup that adding a user needs. For how tokens are issued and validated, see [Authentication](authentication.md). For teams and their members, see [Teams](teams.md). For the endpoints that check `ComposeTeamEmails`, `CanAttachDocuments`, and `DuplicateTeamEmails` on emails, see [Emails and attachments](emails-and-attachments.md). For the ones that check `ManageTeamTemplates` and `DuplicateTeamEmails` on templates, see [Email templates](email-templates.md). For the ones that check `ManageTeamContactGroups`, see [Contact groups](contact-groups.md). For how the UI turns a user's permissions into menus, guards, and hidden buttons, see [How the UI uses permissions](#how-the-ui-uses-permissions).
 
 ## How it fits together
 
@@ -9,7 +9,7 @@ Signing in with Entra proves who someone is; it says nothing about what they may
 - A **permission** is one action the API checks before it runs.
 - Adding a user takes only an email address. The API asks Microsoft Graph for the account that owns it and copies the id, name, and address, so nobody types an object id by hand.
 
-Signing in does not create a user. A caller with a valid token whose `oid` has no active user row can still call the read endpoints, but holds no permissions, and cannot [search the directory](#search-the-directory).
+Signing in does not create a user. A caller with a valid token whose `oid` has no active user row can still call the read endpoints, but holds no permissions, and cannot [search the directory](#search-the-directory). `GET /api/users/me` reports such an account as `isActive: false`, and the UI shows its no-access page; see [Get the signed-in user](#get-the-signed-in-user).
 
 ## Data model
 
@@ -86,13 +86,61 @@ All routes sit under `/api/users` and need a token with the `access_as_user` sco
 
 | Method and route | Permission | Success |
 | --- | --- | --- |
-| `GET /api/users/me` | None | 200 with the caller's object id and name. Unchanged. |
+| `GET /api/users/me` | None | 200 with the caller's profile, global roles and permissions, and teams with their permissions. 403 when the token has no `oid`. |
 | `GET /api/users` | None | 200 with one page of active users |
 | `GET /api/users/directory` | An active user | 200 with the directory accounts that match, not paginated. Rate limited. |
 | `GET /api/users/{id}` | None | 200 with the user |
 | `POST /api/users` | `CreateUser` | 201 with the user and a `Location` of `/api/users/{id}` |
 | `PUT /api/users/{id}` | `ModifyUser` | 200 with the updated user |
 | `DELETE /api/users/{id}` | `DeactivateUser` | 204 |
+
+### Get the signed-in user
+
+The UI needs to know who is signed in and what that person may do before it draws a menu. `GET /api/users/me` answers both in one call, so the UI never guesses a permission or asks the API per button. It needs no permission, but it does need an `oid` claim in the token.
+
+```json
+{
+  "id": "4ee09cb0-d7e7-4be4-b82f-2674695eb9df",
+  "name": "Rodrigo Rojas",
+  "email": "rorro.irg@gmail.com",
+  "isActive": true,
+  "roles": [],
+  "permissions": [],
+  "teams": [
+    {
+      "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+      "name": "HR Announcements",
+      "role": "TeamAdministrator",
+      "permissions": ["CreateTeamUser", "ModifyTeamUser", "ComposeTeamEmails", "SendTeamEmails"]
+    }
+  ]
+}
+```
+
+(The team's `permissions` list is shortened here; the API sends every grant of the role.)
+
+| Field | Holds |
+| --- | --- |
+| `id` | The Entra object id, as a GUID. It is the user's key everywhere, so the UI also uses it to remember the active team. |
+| `name`, `email` | From the user row. If the row has no name, `name` falls back to the token's. |
+| `isActive` | `true` for an active user. `false` for an account with no user row, or a deactivated one. |
+| `roles` | The **global** roles the user holds (only `Administrator`), by name, ordered by value. Team roles appear in `teams`. |
+| `permissions` | What the global roles grant, ordered by value. Empty for anyone without a global role. |
+| `teams` | The teams the caller can see, ordered by name; see below. |
+
+Each team has `id`, `name`, `role`, and `permissions`.
+
+- **Which teams.** The same rule as `GET /api/teams`: every active team for a caller whose global roles grant `ViewTeam` (an `Administrator`), otherwise the teams the caller belongs to. A deactivated team never appears.
+- **`role`.** The caller's role in that team, or `null` when a global role alone shows them the team.
+- **`permissions`.** The team role's grants **plus** the global ones. That is the same fallback `TeamPermissionEndpointFilter` applies when it checks a team route (a grant from either side is enough), so the list matches what the API will allow in that team.
+- **Unknown or deactivated accounts are not an error.** The response is `isActive: false` with the token's `name` and `preferred_username` as `email` (or `null`), and empty `roles`, `permissions`, and `teams`. The UI uses that to show its no-access page.
+
+| Status | When |
+| --- | --- |
+| 200 | The caller's profile and access. |
+| 403 | The token has no `oid` claim, or it is not a GUID, as with an application-only token. Before this change the endpoint answered 200 with an empty `id`. |
+
+`CurrentUserService` (`Andes.Mailer.Service/Users/`) builds the response from the user, role, grant, and team tables on each call, so a role or membership change shows up the next time the UI loads it. The UI loads it once per page load, so a person who is added to a team must reload.
 
 ### The user object
 
@@ -289,6 +337,62 @@ These checks run on every request and read the database, so a role or membership
 
 To protect a new endpoint, add `.AddEndpointFilter(new PermissionEndpointFilter(Permissions.X))` to it, or `new TeamPermissionEndpointFilter(Permissions.X)` for a route under `/api/teams/{teamId:guid}`, or `.AddEndpointFilter<ActiveUserEndpointFilter>()` when it needs no permission but must stay out of reach of anyone who is not an active user. Add a new permission as an enum value and a migration that seeds it and the role grants.
 
+## How the UI uses permissions
+
+The API enforces every permission; the UI uses the same lists to show people only what they can do, and to send them somewhere sensible when they cannot do it. The UI never decides access on its own: hiding a button is a courtesy, and the API's 403 and 404 are the rule.
+
+### The session store
+
+`SessionStore` (`andes-mailer-ui/src/app/core/auth/session-store.ts`) is a root NgRx signal store. It loads `GET /api/users/me` once (`ensureLoaded()`; concurrent callers share one request, and a failure can be retried) and holds:
+
+- `user`: the response above, checked for the fields the app relies on.
+- The **active team**, one of `user.teams`. The choice is remembered per person in `localStorage` under `andes-mailer.team.<oid>`, and if the stored team is gone, the first team is used. `selectTeam(teamId)` changes and stores it.
+- `permissions`: a set of the global permissions together with the active team's permissions (which already include the global ones).
+- `can(permissions, mode)`: `true` when the person holds any (`'any'`, the default) or every one (`'all'`) of the permissions. An empty list is always allowed. It reads the `permissions` signal, so anything that calls it inside a template or `computed` follows team switches.
+
+### Guards
+
+| Guard | Used on | Does |
+| --- | --- | --- |
+| `accessGuard` | The shell, as `canActivateChild` | Loads the account; sends an inactive account to `/no-access`; if the load fails, cancels the navigation and keeps its URL for the splash's retry. It also starts fetching the shell chunk. |
+| `noAccessGuard` | `/no-access`, as `canActivateChild` | The reverse: an account with access goes home. |
+| `permissionGuard(permissions, mode?)` | A route's `canActivate` | Opens the route only if `can()` passes; otherwise redirects to the home page. |
+
+`accessGuard` and `noAccessGuard` are `canActivateChild` because guards in one `canActivate` array run concurrently, and the account call needs the token that `authGuard` acquires first. A child guard runs after the parent's guards finish.
+
+### The directive
+
+```html
+<a *appHasPermission="'ComposeTeamEmails'" routerLink="/compose">New email</a>
+
+<div *appHasPermission="['ModifyTeamUser', 'DeactivateTeamUser']; mode: 'all'; else denied">…</div>
+<ng-template #denied>You can't manage members.</ng-template>
+```
+
+`HasPermission` (`core/auth/has-permission.ts`) renders its template while `can()` passes and the optional `else` template otherwise, and it updates when the team changes. It only hides. Always put `permissionGuard` on the route as well.
+
+### Navigation
+
+The sidebar and the routes both read `navItems` (`core/navigation/nav-items.ts`), so a menu entry and the guard on its page cannot disagree. Each item lists the permissions that show it, checked in the active team.
+
+| Item | Needs | Why |
+| --- | --- | --- |
+| Compose, Drafts, Scheduled, Sent, Templates, Email groups, and the **New email** button | `ComposeTeamEmails` | The permission that guards the team's emails, templates, and contact-group reads |
+| Team members | `ModifyTeamUser` | Held by `Administrator` and `TeamAdministrator`, so only they see the members page |
+| Team settings | `ModifyTeamUser` | **An assumption.** The settings feature has no permission of its own yet; replace it when it does. |
+
+Profile and Help need no permission. Pages that are not built yet are placeholder routes (`features/coming-soon`) with the same guard, so a person without the permission reaches the home page instead of a "Coming soon" screen.
+
+### Switching teams
+
+The team switcher in the sidebar (and a compact chip in the tablet top bar) calls `selectTeam`. Because the permission set is a signal, the navigation, the **New email** button, and every `*appHasPermission` update at once. A shell route also declares the permissions its guard needs in `data.permissions`; when a team switch means the open page is no longer permitted, the shell navigates home, as the guard would have on a fresh visit.
+
+### Add a guarded page or menu entry
+
+1. Add the path to `routePaths` (`core/navigation/route-paths.ts`).
+2. Add an item to `navItems` with its `permissions`. The shell's routes are built from that list, with `permissionGuard` on each.
+3. When the feature lands, replace the placeholder route with the feature's and keep `permissionGuard(...)` and `data: { label, permissions }`.
+
 ## Microsoft Graph setup
 
 Adding a user, and searching the directory, call Microsoft Graph with the API's own identity (an app-only call), not the signed-in user's. That is why the API now needs a credential, which [replaces the old "no client secret anywhere" rule](authentication.md#configuration).
@@ -326,4 +430,5 @@ The `AddTeams` migration **deletes every existing email, recipient, and attachme
 - **No management of the global role.** No endpoint grants or revokes `Administrator`. Until one exists, change `[Core].[UserRole]` with SQL. Team roles are managed through [the member endpoints](teams.md#team-members). A reactivated user starts with no roles and no teams, so an administrator has to re-grant the global role the same way and add them to their teams again.
 - **Graph failures return 500.** A Graph outage, a missing consent, or a bad credential surfaces as a 500 from `POST /api/users` and `GET /api/users/directory`, not a specific error. The cause is in the API logs.
 - **Search results lag the directory.** Results are cached for 2 minutes and shared by every caller, so a new, renamed, or removed account can take about that long to show up.
-- **No UI.** The UI calls only `GET /api/users/me`; it has no screens for the other endpoints yet, including a recipient picker for the directory search.
+- **No management screens.** The UI calls only `GET /api/users/me`; it has no screens for the other endpoints yet, including a recipient picker for the directory search. Its pages beyond the home page are placeholders.
+- **The UI reads access once.** It loads `GET /api/users/me` when the page loads, so a role or membership change reaches an open tab only after a reload. The API checks on every call regardless, so a stale menu can show an action the API then refuses.

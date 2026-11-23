@@ -1,0 +1,44 @@
+// Mockup tokens Bootstrap has no variable for. Bootstrap's own variables are set in styles.scss.
+:root,
+[data-bs-theme='light'] {
+  --am-surface: #ffffff;
+  --am-float: #ffffff;
+  --am-field: #f3f6f5;
+  --am-border-field: #c9d4cf;
+  --am-sidebar: #ffffff;
+  --am-topbar: #ffffff;
+  // Icons only: 4.3:1 on white falls short for text.
+  --am-icon: #6b7f78;
+  --am-accent: #1b9270;
+  --am-accent-bg-2: #d4f5ea;
+  --am-hover: rgba(237, 251, 245, 0.7);
+  // Green 700: the mockup's Green 400 ring is 2.2:1 on white, short of the 3:1 a focus indicator needs.
+  --am-focus: #167a5d;
+  --am-bar: #1b9270;
+  --am-teal: #6aa49c;
+  --am-signin-top: #ffffff;
+  --am-signin-bottom: #edfbf5;
+  --am-shadow: 0 18px 44px -14px rgba(10, 70, 91, 0.24), 0 4px 10px -2px rgba(10, 70, 91, 0.08);
+  --am-shadow-sm: 0 8px 20px -8px rgba(10, 70, 91, 0.22), 0 1px 3px rgba(10, 70, 91, 0.06);
+
+  --bs-box-shadow: var(--am-shadow);
+  --bs-box-shadow-sm: var(--am-shadow-sm);
+}
+
+[data-bs-theme='dark'] {
+  --am-surface: #142a23;
+  --am-float: #1a3329;
+  --am-field: #1a3329;
+  --am-border-field: rgba(255, 255, 255, 0.18);
+  --am-sidebar: #142a23;
+  --am-topbar: #142a23;
+  --am-icon: #8da59c;
+  --am-accent: #20a880;
+  --am-accent-bg-2: rgba(32, 168, 128, 0.26);
+  --am-focus: #34c496;
+  --am-hover: rgba(32, 168, 128, 0.08);
+  --am-signin-top: #0f1f1a;
+  --am-signin-bottom: #142a23;
+  --am-shadow: 0 18px 44px -14px rgba(0, 0, 0, 0.65), 0 4px 10px -2px rgba(0, 0, 0, 0.35);
+  --am-shadow-sm: 0 8px 20px -8px rgba(0, 0, 0, 0.55);
+}

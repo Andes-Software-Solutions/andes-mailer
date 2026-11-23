@@ -13,6 +13,7 @@ internal static class UsersConfiguration
         services.AddHybridCache();
         services.AddScoped<IDirectoryUserService, DirectoryUserService>();
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<IPermissionService, PermissionService>();
 
         return services;

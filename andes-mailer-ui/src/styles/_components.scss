@@ -1,0 +1,221 @@
+// Only what the mockup adds to Bootstrap. Everything else is stock Bootstrap classes.
+
+// One focus ring for every control: 2px Green 400, offset 2px.
+:focus-visible,
+.btn:focus-visible,
+.dropdown-item:focus-visible,
+.form-check-input:focus-visible {
+  outline: 2px solid var(--am-focus);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+h1,
+.h1 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+@media (max-width: 767.98px) {
+  h1,
+  .h1 {
+    font-size: 1.5rem;
+  }
+}
+
+// Card and empty-state titles: Inter, not the Montserrat headings.
+.h-card {
+  font-family: var(--bs-body-font-family);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--bs-body-color);
+}
+
+// Uppercase section label: menus, sidebar groups, table headers.
+.t-micro {
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+// Neutral bordered button, the mockup's .btn-outline.
+.btn-outline {
+  --bs-btn-bg: var(--am-surface);
+  --bs-btn-color: var(--bs-body-color);
+  --bs-btn-border-color: var(--am-border-field);
+  --bs-btn-hover-bg: var(--bs-primary-bg-subtle);
+  --bs-btn-hover-color: var(--bs-body-color);
+  --bs-btn-hover-border-color: var(--am-teal);
+  --bs-btn-active-bg: var(--am-accent-bg-2);
+  --bs-btn-active-color: var(--bs-body-color);
+  --bs-btn-active-border-color: var(--am-teal);
+
+  .bi {
+    color: var(--am-icon);
+  }
+}
+
+// Borderless icon or text button for toolbars.
+.btn-ghost {
+  --bs-btn-color: var(--bs-body-color);
+  --bs-btn-hover-bg: var(--am-field);
+  --bs-btn-hover-color: var(--bs-body-color);
+  --bs-btn-active-bg: var(--am-field);
+  --bs-btn-active-color: var(--bs-body-color);
+  --bs-btn-active-border-color: transparent;
+
+  .bi {
+    color: var(--am-icon);
+  }
+}
+
+.btn-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+
+  &.btn-sm {
+    width: 2rem;
+    height: 2rem;
+  }
+}
+
+// The danger fill fails contrast on the dark body, so dark mode lightens it and darkens its label.
+[data-bs-theme='dark'] .btn-danger {
+  --bs-btn-bg: #e07a76;
+  --bs-btn-border-color: #e07a76;
+  --bs-btn-color: #0f1f1a;
+  --bs-btn-hover-bg: #ea9591;
+  --bs-btn-hover-border-color: #ea9591;
+  --bs-btn-hover-color: #0f1f1a;
+  --bs-btn-active-bg: #ea9591;
+  --bs-btn-active-border-color: #ea9591;
+  --bs-btn-active-color: #0f1f1a;
+}
+
+// Alerts lead with an icon beside the message.
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+
+  > .bi {
+    margin-top: 0.125rem;
+  }
+}
+
+.alert-warning > .bi {
+  color: var(--bs-warning);
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  border-radius: 0.4375rem;
+  font-size: 0.875rem;
+
+  .bi {
+    color: var(--am-icon);
+  }
+}
+
+.dropdown-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+// Role badges: Administrator is a solid fill, Member a tinted outline.
+.badge-admin {
+  background-color: var(--bs-primary);
+  color: #ffffff;
+}
+
+.badge-member {
+  background-color: var(--bs-primary-bg-subtle);
+  color: var(--bs-primary-text-emphasis);
+  box-shadow: inset 0 0 0 1px var(--bs-primary-border-subtle);
+}
+
+// Indeterminate progress, for waits with no measurable end.
+.bar-indet {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 50rem;
+  background-color: var(--am-field);
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 40%;
+    border-radius: 50rem;
+    background-color: var(--am-bar);
+    animation: am-indet 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes am-indet {
+  from {
+    left: -40%;
+  }
+
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar-indet::after {
+    left: 30%;
+    animation: none;
+  }
+}
+
+// Initials avatar: round for people, rounded square for teams.
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background-color: var(--bs-primary);
+  color: #ffffff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+
+  &.avatar-team {
+    border-radius: 0.5rem;
+    background-color: var(--am-accent-bg-2);
+    color: var(--bs-primary-text-emphasis);
+    font-family: Montserrat, 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+  }
+
+  &.avatar-lg {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+}

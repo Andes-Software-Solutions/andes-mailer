@@ -1,0 +1,157 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 100%;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.25rem;
+}
+
+.logo-link {
+  display: inline-flex;
+  min-width: 0;
+  border-radius: 0.5rem;
+  text-decoration: none;
+}
+
+.rail-only {
+  display: none;
+}
+
+.ridge {
+  margin-top: -0.5rem;
+}
+
+.new-email {
+  width: 100%;
+}
+
+.nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: 2.5rem;
+  padding: 0 0.75rem;
+  border-radius: 0.5rem;
+  color: var(--bs-body-color);
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+
+  .bi {
+    font-size: 1.25rem;
+    color: var(--am-icon);
+  }
+
+  &:hover {
+    background-color: var(--am-hover);
+  }
+
+  &.is-active {
+    background-color: var(--bs-primary-bg-subtle);
+    color: var(--bs-primary-text-emphasis);
+    font-weight: 600;
+
+    .bi {
+      color: var(--am-accent);
+    }
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 6px;
+      bottom: 6px;
+      left: -16px;
+      width: 3px;
+      border-radius: 0 3px 3px 0;
+      background-color: var(--am-bar);
+    }
+  }
+}
+
+:host(:not(.rail)) .nav-item {
+  height: 3rem;
+}
+
+.nav-label {
+  padding: 1.125rem 0.75rem 0.375rem;
+}
+
+.foot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--bs-border-color);
+}
+
+@media (min-width: 768px) and (max-width: 991.98px) {
+  :host(.rail) {
+    align-items: center;
+    gap: 0.75rem;
+
+    .rail-hide {
+      display: none;
+    }
+
+    .rail-only {
+      display: inline-flex;
+    }
+
+    .head {
+      justify-content: center;
+      padding: 0;
+    }
+
+    // Visually hidden but still the link's accessible name.
+    .nav-text {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .nav-item {
+      justify-content: center;
+      width: 3rem;
+      height: 2.75rem;
+      padding: 0;
+
+      &.is-active::before {
+        left: -12px;
+      }
+    }
+
+    .nav-label {
+      width: 2rem;
+      height: 1px;
+      margin: 0.625rem auto;
+      padding: 0;
+      overflow: hidden;
+      font-size: 0;
+      background-color: var(--bs-border-color);
+    }
+
+    .new-email {
+      width: 3rem;
+      height: 3rem;
+      padding: 0;
+      border-radius: 50%;
+    }
+  }
+}

@@ -1,4 +1,15 @@
 export const routePaths = {
   home: '',
   loginFailed: 'login-failed',
+  noAccess: 'no-access',
+  compose: 'compose',
+  drafts: 'drafts',
+  scheduled: 'scheduled',
+  sent: 'sent',
+  templates: 'templates',
+  emailGroups: 'email-groups',
+  teamMembers: 'team/members',
+  teamSettings: 'team/settings',
+  profile: 'profile',
+  help: 'help',
 } as const;

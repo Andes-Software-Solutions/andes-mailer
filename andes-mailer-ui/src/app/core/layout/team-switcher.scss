@@ -1,0 +1,64 @@
+:host {
+  display: block;
+}
+
+.team-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 0.5625rem 0.625rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.75rem;
+  background-color: var(--am-surface);
+  color: var(--bs-body-color);
+  text-align: start;
+
+  &:hover:not(:disabled),
+  &[aria-expanded='true'] {
+    border-color: var(--am-teal);
+  }
+
+  &[aria-expanded='true'] {
+    box-shadow: 0 0 0 3px var(--bs-primary-bg-subtle);
+  }
+
+  > .bi {
+    color: var(--am-icon);
+  }
+}
+
+.ts-name {
+  min-width: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+:host(.compact) .team-switch {
+  gap: 0.5rem;
+  padding: 0.25rem 0.625rem 0.25rem 0.25rem;
+  border-radius: 0.5rem;
+
+  .avatar {
+    width: 1.375rem;
+    height: 1.375rem;
+    font-size: 0.625rem;
+    border-radius: 0.375rem;
+  }
+}
+
+.dropdown-menu {
+  width: 300px;
+  max-width: calc(100vw - 2rem);
+}
+
+.dropdown-item .avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.6875rem;
+}
+
+.check {
+  color: var(--am-accent);
+}

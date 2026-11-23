@@ -1,22 +1,23 @@
-<header class="bg-primary py-4">
-  <div class="container">
-    <img
-      ngSrc="andes-mark-white.png"
-      width="166"
-      height="66"
-      priority
-      alt="Andes Software Solutions logo"
-    />
-  </div>
-</header>
-
-<main class="container py-4">
-  <h1>Andes Mailer</h1>
-  <p class="lead">Send and manage email for Andes applications.</p>
-
-  @if (user.hasValue()) {
-    <p>Signed in as {{ user.value().name }}</p>
-  } @else if (user.error()) {
-    <p class="text-danger-emphasis" role="alert">We couldn't load your account.</p>
+<h1 class="mb-0">
+  @if (firstName()) {
+    Welcome, {{ firstName() }}
+  } @else {
+    Welcome
   }
-</main>
+</h1>
+
+<div class="card">
+  @if (session.activeTeam(); as team) {
+    <app-empty-state
+      icon="envelope-paper"
+      title="Pick up where you left off"
+      [text]="'You are working in ' + team.name + '. Choose a page from the menu to get started.'"
+    />
+  } @else {
+    <app-empty-state
+      icon="people"
+      title="You're not on a team yet"
+      text="Ask a team administrator to add you to a team, then sign in again."
+    />
+  }
+</div>

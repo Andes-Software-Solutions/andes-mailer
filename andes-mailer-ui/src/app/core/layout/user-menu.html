@@ -1,0 +1,64 @@
+<div class="dropdown">
+  <button
+    #toggle
+    class="user-btn"
+    type="button"
+    data-bs-toggle="dropdown"
+    aria-expanded="false"
+    aria-haspopup="menu"
+    [attr.aria-label]="'Account menu for ' + name()"
+  >
+    <span class="avatar" aria-hidden="true">{{ initials() }}</span>
+    @if (!compact()) {
+      <span class="user-meta d-none d-lg-flex">
+        <span class="um-name text-truncate">{{ name() }}</span>
+        <span class="um-title text-truncate">{{ subtitle() }}</span>
+      </span>
+      <i class="bi bi-chevron-down d-none d-lg-inline" aria-hidden="true"></i>
+    }
+  </button>
+
+  <ul
+    class="dropdown-menu dropdown-menu-end"
+    role="menu"
+    [attr.aria-label]="'Account menu for ' + name()"
+  >
+    <li class="who" role="presentation">
+      <span class="avatar avatar-lg" aria-hidden="true">{{ initials() }}</span>
+      <span class="d-flex flex-column min-w-0">
+        <span class="fw-semibold text-truncate">{{ name() }}</span>
+        @if (email()) {
+          <span class="small text-body-secondary text-truncate">{{ email() }}</span>
+        }
+      </span>
+    </li>
+    <li role="presentation"><hr class="dropdown-divider" /></li>
+    <li role="none">
+      <a class="dropdown-item" role="menuitem" [routerLink]="profilePath">
+        <i class="bi bi-person-circle" aria-hidden="true"></i>
+        My profile
+      </a>
+    </li>
+    <li role="presentation"><hr class="dropdown-divider" /></li>
+    <li role="presentation"><span class="dropdown-header">Theme</span></li>
+    @for (option of themeOptions; track option.value) {
+      <li role="none">
+        <button
+          class="dropdown-item"
+          type="button"
+          role="menuitemradio"
+          [attr.aria-checked]="theme.preference() === option.value"
+          (click)="setTheme(option.value)"
+        >
+          <i class="bi" [class]="option.icon" aria-hidden="true"></i>
+          {{ option.label }}
+          <i
+            class="bi bi-check2 check ms-auto"
+            [class.invisible]="theme.preference() !== option.value"
+            aria-hidden="true"
+          ></i>
+        </button>
+      </li>
+    }
+  </ul>
+</div>

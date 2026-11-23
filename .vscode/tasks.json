@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "api: build",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}/andes-mailer-api/Andes.Mailer.Api/Andes.Mailer.Api.csproj",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary"
+      ],
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "ui: serve",
+      "type": "npm",
+      "script": "start",
+      "path": "andes-mailer-ui",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "typescript",
+        "pattern": "$tsc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Changes detected",
+          "endsPattern": "bundle generation (complete|failed)"
+        }
+      }
+    },
+    {
+      "label": "azurite: start",
+      "detail": "Starts the Blob emulator the API needs, reusing the container after the first run.",
+      "type": "shell",
+      "command": "docker start andes-mailer-azurite 2>/dev/null || docker run -d --name andes-mailer-azurite -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck",
+      "windows": {
+        "command": "docker start andes-mailer-azurite 2>nul || docker run -d --name andes-mailer-azurite -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck",
+        "options": {
+          "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] }
+        }
+      },
+      "problemMatcher": []
+    }
+  ]
+}
