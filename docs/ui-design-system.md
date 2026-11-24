@@ -48,6 +48,11 @@ The mockup's green and teal palette replaces the earlier navy one. These are the
 | `--am-teal` | `#6aa49c` | `#6aa49c` | The ridgeline and hover borders |
 | `--am-signin-top`, `--am-signin-bottom` | `#ffffff`, `#edfbf5` | `#0f1f1a`, `#142a23` | The sign-in page's gradient |
 | `--am-shadow`, `--am-shadow-sm` | Teal-tinted | Black | Also assigned to `--bs-box-shadow` and `--bs-box-shadow-sm`, so Bootstrap's shadows follow |
+| `--am-overlay` | `rgba(12, 40, 33, 0.45)` | `rgba(3, 10, 8, 0.64)` | The backdrop behind a modal dialog |
+| `--am-accent-bg` | `#edfbf5` | `rgba(32, 168, 128, 0.14)` | The lightest accent tint, such as the icon tile in a confirmation |
+| `--am-switch-off` | `#b7c4bf` | `rgba(255, 255, 255, 0.28)` | The track of a switch that is off |
+| `--am-sk-a`, `--am-sk-b` | `#eef2f0`, `#e3e9e6` | `#1a3329`, `#213d32` | The two tones a loading skeleton shimmers between |
+| `--am-team-<colour>-bg`, `--am-team-<colour>-fg` | See `_tokens.scss` | See `_tokens.scss` | A team avatar's background and initials, for each `TeamColors` preset: `mint`, `seafoam`, `mist`, `sky`, `green`, `ocean` |
 
 ### Type, shape, and size
 
@@ -80,14 +85,44 @@ Use stock Bootstrap classes first. These are the mockup's additions, all in `src
 | `avatar` (`avatar-team`, `avatar-lg`) | An initials disc, round for people and a rounded square for teams |
 | `t-micro` | An uppercase 12 px section label |
 | `h-card` | The card-title style above |
+| `team-color-<colour>` | Sets a team avatar's colours from the `--am-team-*` tokens; `TeamAvatar` adds the class for its `color` input |
+| `avatar-me`, `avatar-person`, `avatar-sm` | Person-avatar variants: the signed-in person set apart, a plain person disc, and a smaller size |
+| `page-head`, `h-section` | A page's title row (heading and subtitle left, the action right) and a section heading |
+| `input-icon` | A search field with its icon inside |
+| `filters`, `seg` | A row of list filters, and a segmented control that picks one of a few options |
+| `switch` | An on/off switch with its label beside it |
+| `radio-card` | A choice drawn as a card, for options that each need a line of explanation |
+| `badge-neutral` | A quiet badge for a status that is not a role |
+| `tbl`, `tbl-wrap` | A data table with uppercase headers and row dividers, and its scroll wrapper |
+| `btn-remove` | A remove button that turns red on hover, so the destructive action reads before it is pressed |
+| `mcard`, `list-gap`, `mbar` | A list row's phone form, the gap between such rows, and a sticky bottom action bar clear of the compose button |
+| `pk-row`, `chips`, `chip` | A person-picker row in a search dialog, and the removable chips of the people picked |
+| `modal-ic` (`-danger`, `-warn`, `-ok`, `-info`) | The icon tile that leads a confirmation dialog, tinted by what the action does |
+| `am-toast` | A toast; `ToastStack` renders them |
+| `sk` | A loading skeleton that shimmers, or holds still under `prefers-reduced-motion` |
+| `rte-doc` | The document area of the rich-text editor; TipTap renders it outside Angular's component styles |
+| `unsaved-bar` | A bar that floats over the bottom of a form while it has unsaved changes |
 
 The same file restyles a few Bootstrap parts everywhere: one focus ring for every control, alerts that lead with an icon, `dropdown-item` and `dropdown-header`, and a lighter `btn-danger` fill in dark mode, where the standard red fails contrast.
 
-Shared, reusable pieces in `src/app/shared/` follow the design too: `SignInLayout` (the centred card for every sign-in state), `EmptyState` (an icon in an accent disc, a title, and text), `AppLogo`, and `Ridgeline`.
+Shared, reusable pieces in `src/app/shared/` follow the design too:
+
+| Piece | Does |
+| --- | --- |
+| `SignInLayout` | The centred card for every sign-in state |
+| `EmptyState` | An icon in an accent disc, a title, and text |
+| `AppLogo`, `Ridgeline` | The brand mark and the ridgeline |
+| `ModalDialog`, `ConfirmDialog` (`shared/dialog/`) | A modal on the native `<dialog>` and a ready-made confirmation. They deliberately do not use Bootstrap's `Modal`: the browser traps focus, makes the page inert, and closes on Escape, so no script or instance has to be disposed. They keep the `.modal-*` markup and styles. |
+| `RichTextEditor` (`shared/rich-text/`) | A TipTap editor for HTML, such as a team signature |
+| `TeamAvatar` (`shared/team-avatar/`) | A team's initials on its avatar colour |
+| `mediaQuery()` (`shared/layout/media-query.ts`) | A signal that follows a media query, with `PHONE_QUERY` and `TABLET_DOWN_QUERY` for the breakpoints where tables become cards |
+| `unsavedChangesGuard` (`shared/forms/`) | A `canDeactivate` guard that asks before leaving a form with unsaved changes |
+
+Feedback toasts are not in `shared/`: `ToastStore` and `ToastStack` live in `core/feedback/`, because any feature raises one and the shell renders them.
 
 ### Bootstrap JavaScript
 
-Import Bootstrap's JavaScript per component (`import { Dropdown } from 'bootstrap'`), create each instance in `afterNextRender`, and call `dispose()` on destroy. Shell code shows the three cases: `attachDropdown` for menus, `RailTooltip` for the icon rail, and `Offcanvas` for the phone menu. Bootstrap returns focus to the opener only for its data attributes, so these helpers do it themselves.
+Dialogs do not use Bootstrap's JavaScript: `ModalDialog` is built on the native `<dialog>`, not `Modal`. For everything else, import Bootstrap's JavaScript per component (`import { Dropdown } from 'bootstrap'`), create each instance in `afterNextRender`, and call `dispose()` on destroy. Shell code shows the three cases: `attachDropdown` for menus, `RailTooltip` for the icon rail, and `Offcanvas` for the phone menu. Bootstrap returns focus to the opener only for its data attributes, so these helpers do it themselves.
 
 ## Fonts
 

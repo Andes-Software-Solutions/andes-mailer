@@ -1,13 +1,14 @@
 # Teams
 
-Mail has to leave from somewhere. A team is the group of people who write emails together, plus the shared mailbox those emails are sent from, so the message comes from "Press Office" and not from whoever clicked the button. This page covers the data model, the `/api/teams` and `/api/teams/{teamId}/members` endpoints, how team access is checked, and what to do before you apply the migration that introduces teams. For roles and permissions, see [Users and permissions](users-and-permissions.md). For the drafts a team composes, see [Emails and attachments](emails-and-attachments.md). For the address lists a team keeps, see [Contact groups](contact-groups.md). For how tokens are issued and validated, see [Authentication](authentication.md).
+Mail has to leave from somewhere. A team is the group of people who write emails together, plus the shared mailbox those emails are sent from, so the message comes from "Press Office" and not from whoever clicked the button. This page covers the data model, the `/api/teams` and `/api/teams/{teamId}/members` endpoints, how team access is checked, the team and member screens in the UI, and what to do before you apply the migration that introduces teams. For roles and permissions, see [Users and permissions](users-and-permissions.md). For the drafts a team composes, see [Emails and attachments](emails-and-attachments.md). For the address lists a team keeps, see [Contact groups](contact-groups.md). For how tokens are issued and validated, see [Authentication](authentication.md). For how every write on this page can be safely repeated, see [Idempotency](idempotency.md).
 
 ## How it fits together
 
 - A **team** has a name, an optional description, and a **service account**: the directory mailbox it sends from. The API verifies the mailbox in Microsoft Graph when you save it, so a typo never becomes a team that cannot send.
 - A **member** is a user with a role in one team. A user can belong to many teams and hold a different role in each.
 - Roles are **scoped**. `Administrator` is held across the application. `TeamAdministrator` and `TeamMember` are held per team. See [Roles and scopes](#roles-and-scopes).
-- Only an `Administrator` creates, edits, or deactivates teams. A `TeamAdministrator` manages who is in their own team.
+- Only an `Administrator` creates or deactivates teams, and only an `Administrator` changes a team's service mailbox. A `TeamAdministrator` manages who is in their own team and edits its details and [settings](#team-settings).
+- A team also keeps **settings** that shape how its emails are written and sent: an avatar colour, where replies go, a default signature, and a confirmation threshold. See [Team settings](#team-settings).
 - Every email belongs to a team. Every member of that team can work on all of its drafts.
 - A team keeps its own [contact groups](contact-groups.md): named lists of addresses that any member adds to an email, and that a `TeamAdministrator` maintains. Deactivating the team hides its groups, as it hides its emails and templates.
 
@@ -15,8 +16,7 @@ Mail has to leave from somewhere. A team is the group of people who write emails
 
 These are not built, and the API makes no provision for them:
 
-- The UI: there are no screens for teams or members yet.
-- Sending. The service account is recorded as the sender, but nothing sends mail yet.
+- Enforcing the settings. The API stores them and returns them, but no code reads them yet: sending does not ask for a confirmation above `confirmRecipientsAbove`.
 - Reactivating a deactivated team. See [Known limitations](#known-limitations).
 
 ## Roles and scopes
@@ -24,7 +24,7 @@ These are not built, and the API makes no provision for them:
 | Role | Id | Scope | Held through | Can |
 | --- | --- | --- | --- | --- |
 | `Administrator` | 1 | The whole application | `[Core].[UserRole]` | Everything, in every team, including its emails |
-| `TeamAdministrator` | 2 | One team | `[Core].[TeamMember]` | Add, re-role, and remove members; create, edit, and deactivate [email templates](email-templates.md) and [contact groups](contact-groups.md); compose emails; attach documents |
+| `TeamAdministrator` | 2 | One team | `[Core].[TeamMember]` | Add, re-role, and remove members; edit the team's details and settings, but not its service mailbox; create, edit, and deactivate [email templates](email-templates.md) and [contact groups](contact-groups.md); compose emails; attach documents |
 | `TeamMember` | 3 | One team | `[Core].[TeamMember]` | View the team and its members; compose emails; read [contact groups](contact-groups.md); attach documents |
 
 The scopes are listed in `RoleScopes` (`Andes.Mailer.Common/Constants/Users/`). Check constraints enforce them in the database: `[Core].[UserRole]` accepts only `RoleId` 1, and `[Core].[TeamMember]` accepts only 2 and 3. The API also rejects a global role in a membership request with a 400.
@@ -33,7 +33,7 @@ The permission grants for each role are in [Users and permissions](users-and-per
 
 ## Data model
 
-Both tables live in the `Core` schema and arrive in the migration `Andes.Mailer.Repository/Sql/Migrations/*_AddTeams.cs`. The migration `*_AddTeamServiceAccountIdIndex.cs` adds the unique index on `ServiceAccountId`.
+Both tables live in the `Core` schema and arrive in the migration `Andes.Mailer.Repository/Sql/Migrations/*_AddTeams.cs`. The migration `*_AddTeamServiceAccountIdIndex.cs` adds the unique index on `ServiceAccountId`, and `*_AddTeamSettings.cs` adds the settings columns and the `[Core.Ref].[TeamColor]` reference table described under [Team settings](#team-settings).
 
 ### `[Core].[Team]`
 
@@ -44,6 +44,9 @@ Both tables live in the `Core` schema and arrive in the migration `Andes.Mailer.
 | `Description` | Up to 500 characters. Null when you send nothing or only whitespace. |
 | `ServiceAccountEmail` | The mailbox the team sends from, up to 256 characters, always stored in lowercase. Unique among active teams. |
 | `ServiceAccountId` | The Entra object id of that mailbox. Unique among active teams (the filtered unique index `IX_Team_ServiceAccountId`). Not a foreign key: a service account sends mail but never signs in, so it is not a row in `[Core].[User]`. |
+| `AvatarColorId` | The colour of the team's avatar, a foreign key to `[Core.Ref].[TeamColor]`. Defaults to `Mint`. |
+| `DefaultSignature` | The team's HTML signature. See [Team settings](#team-settings). |
+| `ConfirmRecipientsAbove` | The recipient count above which sending should ask for confirmation. See [Team settings](#team-settings). |
 | `DateCreated`, `DateModified`, `DateDeactivated`, `Version` | The same audit, soft-delete, and `rowversion` columns as [`[Core].[User]`](users-and-permissions.md#coreuser). |
 
 One mailbox serves one team. The API checks both the address and the object id, because a mailbox's `mail` and `userPrincipalName` are two spellings of the same account. The database enforces both as unique indexes among active teams, so if two concurrent requests use two addresses of one mailbox, one succeeds and the other gets a 409.
@@ -60,6 +63,20 @@ Re-adding a removed member reactivates the same row and sets the new role. `date
 
 Queries on `TeamMember` hide a row when the row, its user, or its team is deactivated. Queries on `Email` hide a team's emails when the team is deactivated. A deactivated team or user therefore grants nothing and shows up nowhere, without any row being deleted.
 
+## Team settings
+
+The settings live on `[Core].[Team]` next to the details. A `PUT` replaces all of them, so a client sends every field each time. They are **stored only**: the API validates and returns them, and the compose and send features will read them later.
+
+| Setting | Column | Values and rules |
+| --- | --- | --- |
+| Avatar colour | `AvatarColorId` | `Mint` (default), `Seafoam`, `Mist`, `Sky`, `Green`, or `Ocean`. The `TeamColors` enum, mirrored by `[Core.Ref].[TeamColor]`. |
+| Default signature | `DefaultSignature` | HTML, at most 4000 characters in the request. The API sanitizes it with `EmailBodySanitizer`, the same sanitizer as an email body, and stores null when nothing is left. The column is unbounded, because sanitizing can make the HTML longer. |
+| Confirm above | `ConfirmRecipientsAbove` | 1 to 500, the recipient cap of an email. Defaults to 50. Enforced by `CK_Team_ConfirmRecipientsAbove`. |
+
+The migration `*_AddTeamSettings.cs` gives every existing team the defaults a new team gets, so nothing has to be filled in by hand.
+
+A team sends only from its service mailbox, so replies go to that mailbox (the From address, with no Reply-To header), and who reads them is managed in Exchange, through a shared mailbox's permissions or forwarding to a distribution list or Microsoft 365 group.
+
 ## Endpoints
 
 All routes need a token with the `access_as_user` scope, like every other endpoint. Errors are Problem Details responses. Enums travel by **name** (`"TeamAdministrator"`), and property names are camelCase.
@@ -71,10 +88,12 @@ All routes need a token with the `access_as_user` scope, like every other endpoi
 | `GET /api/teams` | None | 200 with one page of teams | 400 for a bad `page` or `pageSize` |
 | `GET /api/teams/{teamId}` | `ViewTeam` in the team | 200 with the team | 403, 404 |
 | `POST /api/teams` | `CreateTeam` | 201 with the team and a `Location` of `/api/teams/{id}` | 400, 403, 404, 409 |
-| `PUT /api/teams/{teamId}` | `ModifyTeam` | 200 with the updated team | 400, 403, 404, 409 |
+| `PUT /api/teams/{teamId}` | `ModifyTeam` in the team | 200 with the updated team | 400, 403, 404, 409 |
 | `DELETE /api/teams/{teamId}` | `DeactivateTeam` | 204 | 403, 404, 409 |
 
-`CreateTeam`, `ModifyTeam`, and `DeactivateTeam` are held by `Administrator` only, so every other caller gets a 403 on those three routes.
+`CreateTeam` and `DeactivateTeam` are held by `Administrator` only, so every other caller gets a 403 on those routes. `ModifyTeam` is held by `Administrator` and `TeamAdministrator` and is checked **in the team**: a team administrator edits their own team, and a team member gets a 403. Changing the service mailbox is the exception, described under [Update a team](#update-a-team).
+
+The three writes accept an optional `Idempotency-Key`; see [Idempotency](idempotency.md).
 
 ### The team object
 
@@ -84,13 +103,18 @@ All routes need a token with the `access_as_user` scope, like every other endpoi
   "name": "Press Office",
   "description": "Media enquiries and announcements",
   "serviceAccountEmail": "press@andes.example",
+  "avatarColor": "Mint",
+  "defaultSignature": "<p>Press Office</p>",
+  "confirmRecipientsAbove": 50,
+  "memberCount": 4,
+  "administratorCount": 1,
   "dateCreated": "2026-11-15T19:40:02+00:00",
   "dateModified": null,
   "version": "AAAAAAAAB9E="
 }
 ```
 
-`version` is the base64 row version. Send it back unchanged when you update the team.
+`memberCount` and `administratorCount` count active members, so a screen can warn before the last administrator leaves. `version` is the base64 row version. Send it back unchanged when you update the team.
 
 ### List teams
 
@@ -115,6 +139,7 @@ Each item is a summary that carries the caller's own role:
       "name": "Press Office",
       "description": "Media enquiries and announcements",
       "serviceAccountEmail": "press@andes.example",
+      "avatarColor": "Mint",
       "memberCount": 4,
       "role": "TeamAdministrator"
     }
@@ -138,7 +163,8 @@ Content-Type: application/json
 {
   "name": "Press Office",
   "description": "Media enquiries and announcements",
-  "serviceAccountEmail": "press@andes.example"
+  "serviceAccountEmail": "press@andes.example",
+  "avatarColor": "Seafoam"
 }
 ```
 
@@ -149,6 +175,9 @@ The API trims the name, trims and lowercases the address, and looks the mailbox 
 | `name` | Required, at most 100 characters. |
 | `description` | Optional, at most 500 characters. |
 | `serviceAccountEmail` | Required, at most 256 characters, a valid address. |
+| `avatarColor` | Optional, one of the six [colours](#team-settings). `Mint` when omitted. |
+
+Every other setting starts at its default.
 
 | Status | When |
 | --- | --- |
@@ -168,11 +197,16 @@ Content-Type: application/json
   "name": "Press and Media",
   "description": null,
   "serviceAccountEmail": "press@andes.example",
+  "avatarColor": "Mint",
+  "defaultSignature": "<p>Press Office</p>",
+  "confirmRecipientsAbove": 50,
   "version": "AAAAAAAAB9E="
 }
 ```
 
-`PUT` **replaces** the name, description, and service account, so send all three each time. The API asks Graph again **only when the address changes**. Renaming a team therefore never depends on Graph being reachable.
+`PUT` **replaces** the details and every [setting](#team-settings), so send all of them each time. Only `description` and `defaultSignature` may be null. The API asks Graph again **only when the address changes**. Renaming a team therefore never depends on Graph being reachable.
+
+**Who may change the mailbox.** A team administrator can save everything else, but the mailbox decides who the mail comes from, so changing `serviceAccountEmail` needs a **global** role that holds `ModifyTeam`. A team administrator who sends a different address gets a 403 ("Only an administrator can change the team's service mailbox.") and nothing is saved. Sending the current address is not a change.
 
 The update applies only if the row still has the `version` you sent. If anyone changed the team in between, the API returns 409 and you read the team again before retrying. Besides the create rules, `version` must decode to 8 bytes, or the request is a 400.
 
@@ -180,8 +214,8 @@ The update applies only if the row still has the `version` you sent. If anyone c
 | --- | --- |
 | 200 | The team was saved. The response holds the new `version`. |
 | 400 | A field breaks its rule, or `version` is not an 8-byte base64 row version. |
-| 403 | The caller lacks `ModifyTeam`. |
-| 404 | No active team has that id, or a new address has no directory account. |
+| 403 | The caller lacks `ModifyTeam` in this team, or changes the service mailbox without a global role. |
+| 404 | No active team has that id, the caller is not in it and holds no global role, or a new address has no directory account. |
 | 409 | The `version` is stale, or another active team has the name or the mailbox, under any of its addresses. |
 
 ### Deactivate a team
@@ -208,6 +242,9 @@ All member routes sit under `/api/teams/{teamId}/members`. A member is addressed
 | `POST /api/teams/{teamId}/members` | `CreateTeamUser` | 201 with the member and a `Location` of `/api/teams/{teamId}/members/{userId}` | 400, 403, 404, 409 |
 | `PUT /api/teams/{teamId}/members/{userId}` | `ModifyTeamUser` | 200 with the updated member | 400, 403, 404, 409 |
 | `DELETE /api/teams/{teamId}/members/{userId}` | `DeactivateTeamUser` | 204 | 403, 404, 409 |
+| `DELETE /api/teams/{teamId}/members/me` | `ViewTeam` | 204 | 404, 409 |
+
+The four writes accept an optional `Idempotency-Key`; see [Idempotency](idempotency.md).
 
 ### The member object
 
@@ -266,11 +303,11 @@ Content-Type: application/json
 { "role": "TeamAdministrator", "version": "AAAAAAAAB9F=" }
 ```
 
-Only the role in **this team** changes. The user's name, email, and roles in other teams are untouched. `role` follows the same rule as when adding; `version` is the membership's row version and must decode to 8 bytes.
+The only thing a `PUT` changes is the role. Only this team's membership changes: the user's name, email, and roles in other teams are untouched. `role` follows the same rule as when adding; `version` is the membership's row version and must decode to 8 bytes.
 
 | Status | When |
 | --- | --- |
-| 200 | The role was saved. The response holds the new `version`. |
+| 200 | The change was saved. The response holds the new `version`. |
 | 400 | `role` is not a team role, or `version` is not an 8-byte base64 row version. |
 | 403 | The caller lacks `ModifyTeamUser` in this team. |
 | 404 | The team is missing or the caller is not in it, or the user is not an active member. |
@@ -287,9 +324,21 @@ Only the role in **this team** changes. The user's name, email, and roles in oth
 | 404 | The team is missing or the caller is not in it, or the user is not an active member. |
 | 409 | The member is the team's last team administrator, or the membership or team changed during the operation. |
 
+### Leave a team
+
+`DELETE /api/teams/{teamId}/members/me` removes the **signed-in user** from the team. It takes no body and needs only `ViewTeam`, so any member can leave without asking an administrator. It soft-deletes the membership exactly as [removing a member](#remove-a-member) does, and the last-administrator rule applies the same way.
+
+| Status | When |
+| --- | --- |
+| 204 | The caller left the team. |
+| 404 | The team is missing, or the caller is **not a member of it**. A global `Administrator` who sees the team only through their role is not a member, so they get 404 too: there is nothing to leave. |
+| 409 | The caller is the team's last team administrator, or the membership or team changed during the operation. |
+
+`me` is a literal route segment, so it never collides with `{userId:guid}`.
+
 ### The last team administrator
 
-A team should always have someone who can manage it, so the API refuses to demote or remove the last `TeamAdministrator`. The check saves the team row together with the membership change. Because the team's `version` then changes, two requests that each demote a different administrator cannot both succeed: the second fails with 409 and its change is rolled back.
+A team should always have someone who can manage it, so the API refuses to demote, remove, or let leave the last `TeamAdministrator`. The check saves the team row together with the membership change. Because the team's `version` then changes, two requests that each demote a different administrator cannot both succeed: the second fails with 409 and its change is rolled back.
 
 Two consequences follow:
 
@@ -314,11 +363,27 @@ Routes under `/api/teams/{teamId}` run `TeamPermissionEndpointFilter` (`Andes.Ma
 
 The 404 for non-members is deliberate: the API never confirms that a team you cannot see exists, the same way it treats another team's emails. The 403 appears only for someone who is already in the team, where nothing is hidden. A deactivated team is out of reach even for an `Administrator`, so its emails cannot change while nobody can see the team.
 
-`POST`, `PUT`, and `DELETE` on `/api/teams` itself use the plain `PermissionEndpointFilter` instead, which checks only global roles: creating, editing, and deactivating teams belongs to the `Administrator` alone, whatever a member's team role. `GET /api/teams` needs no permission and filters its own results.
+`POST` and `DELETE` on `/api/teams` itself use the plain `PermissionEndpointFilter` instead, which checks only global roles: creating and deactivating teams belongs to the `Administrator` alone, whatever a member's team role. `PUT /api/teams/{teamId}` is a team route and uses `TeamPermissionEndpointFilter(ModifyTeam)`, so a team administrator can edit their own team; `TeamService` then keeps the mailbox with the global role. `GET /api/teams` needs no permission and filters its own results.
+
+On the write routes, `IdempotencyEndpointFilter` runs **before** these permission filters, so a replay returns the caller's earlier success even when the permission check would now fail, for example after they left the team. See [Idempotency](idempotency.md#filter-order).
 
 The check reads the database on every request, so a membership or role change takes effect on the caller's next call. Deactivating a user hides their memberships immediately; see [Deactivating a user](#deactivating-a-user).
 
 To protect a new team route, put it under `/api/teams/{teamId:guid}` and add `.AddEndpointFilter(new TeamPermissionEndpointFilter(Permissions.X))`. The route value must be named `teamId`.
+
+## The UI
+
+The screens live in `andes-mailer-ui/src/app/features/`. Each is lazy-loaded, guarded by `permissionGuard`, and listed in `core/navigation/nav-items.ts`; see [Users and permissions](users-and-permissions.md#how-the-ui-uses-permissions). Every write sends an [idempotency key](idempotency.md#how-the-ui-sends-keys), and its button is disabled while the request runs.
+
+| Page | Route | Needs | What it does |
+| --- | --- | --- | --- |
+| Team members | `/team/members` | `ModifyTeamUser` | Lists the active team's members with search and a role filter. **Add members** opens a dialog with directory search and a role (Member or Administrator); it adds several people at once and keeps any it failed to add selected, so a retry sends them again with the same keys. A role changes inline, with a confirmation when promoting. **Remove** asks first, then shows an Undo toast that adds the person back. Removing the last administrator opens an explanation instead. Tablets and phones get a card layout. |
+| Team settings | `/team/settings` | `ModifyTeam` | A form (Angular Signal Forms) in three cards: General (name, avatar colour, description, and the mailbox, read-only unless you are a global `Administrator`), Sending defaults (a note on where replies go, then a rich-text signature editor), and Safety rules (the confirmation threshold). An unsaved-changes bar and a guard on leaving the page protect edits. If someone else saved first, a conflict alert offers **Reload**. Members see **Leave team**, which is disabled for the only administrator. |
+| Teams | `/teams` | `CreateTeam` | Only a global `Administrator` sees it. Lists every team, creates one in a **New team** dialog (name, mailbox, description, colour), and deactivates one. After creating, it selects the new team and opens Team members. |
+
+Team settings and Teams are separate because they answer different questions: settings are about **this** team and open to its administrators, while Teams is about the whole application.
+
+The UI leaves out what the API does not have: a member's title and department, who added them, and a count of people in the organization.
 
 ## Deactivating a user
 
@@ -342,6 +407,10 @@ Run it from `andes-mailer-api/`. The migration changes data, not only the schema
 
 Afterwards the database has no teams. Sign in as the seeded administrator, create a team, and add its members. Until then, no one but an `Administrator` can reach any email route.
 
+### The `AddTeamSettings` migration
+
+This one is safe to apply to a database that has teams. It adds the settings columns with their defaults, creates and seeds `[Core.Ref].[TeamColor]`, and grants `ModifyTeam` to `TeamAdministrator`. Existing teams keep working and take the defaults. `Down` drops the columns, so any settings saved since are lost.
+
 ## Examples
 
 ### Set up a team
@@ -361,10 +430,10 @@ Afterwards the database has no teams. Sign in as the seeded administrator, creat
 
 ## Known limitations
 
-- **No UI.** The UI has no screens for teams or members yet.
+- **The settings do nothing yet.** `confirmRecipientsAbove` and the signature are saved and returned, but no compose or send code reads them.
+- **Replays assume one API instance.** Idempotency keys live in process memory; see [Idempotency](idempotency.md#limits).
 - **No team reactivation.** Deactivating a team is one-way through the API. Its rows remain, so a developer can reactivate it by clearing `DateDeactivated` in SQL, but nothing in the API does it.
 - **Teams can end up without an administrator.** Deactivating a user, or creating a team, can leave a team with no `TeamAdministrator`. Only the member endpoints enforce the rule.
 - **Team administrator changes bump the team's version.** A concurrent team edit gets a 409; see [The last team administrator](#the-last-team-administrator).
 - **A returning member keeps the original join date.** `dateCreated` is not reset when a removed member is added again.
 - **Graph failures return 500.** A Graph outage, a missing consent, or a bad credential surfaces as a 500 from `POST /api/teams`, from `PUT` with a new address, and from `POST` on members, not as a specific error. The cause is in the API logs. See [Microsoft Graph setup](users-and-permissions.md#microsoft-graph-setup).
-- **No sending.** The service account is stored but nothing sends from it yet.
