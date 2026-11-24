@@ -1,3 +1,4 @@
+using Andes.Mailer.Api.Filters.Exceptions;
 using Andes.Mailer.Api.Problems.Constants;
 using Andes.Mailer.Service.Exceptions;
 
@@ -30,6 +31,10 @@ internal sealed partial class GlobalExceptionHandler(IProblemDetailsService prob
         }
 
         httpContext.Response.StatusCode = status;
+        if (exception is IdempotencyRequestInProgressException)
+        {
+            httpContext.Response.Headers.RetryAfter = "1";
+        }
 
         return await _problemDetails.TryWriteAsync(new ProblemDetailsContext
         {
@@ -51,6 +56,7 @@ internal sealed partial class GlobalExceptionHandler(IProblemDetailsService prob
         BadHttpRequestException badRequest => Problem(badRequest.StatusCode, ProblemTypes.BadRequest, "The request could not be read.", null),
         NotFoundException => Problem(StatusCodes.Status404NotFound, ProblemTypes.NotFound, "The resource was not found.", exception.Message),
         ForbiddenException => Problem(StatusCodes.Status403Forbidden, ProblemTypes.Forbidden, "Access to the resource is forbidden.", exception.Message),
+        IdempotencyKeyMismatchException => Problem(StatusCodes.Status422UnprocessableEntity, ProblemTypes.UnprocessableContent, "The Idempotency-Key does not match this request.", exception.Message),
         ConflictException => Problem(StatusCodes.Status409Conflict, ProblemTypes.Conflict, "The request conflicts with the current state of the resource.", exception.Message),
         _ => Problem(StatusCodes.Status500InternalServerError, ProblemTypes.Unexpected, "An unexpected error occurred.", null),
     };

@@ -1,8 +1,12 @@
+using System.Security.Claims;
+
 using Andes.Mailer.Api.Filters;
+using Andes.Mailer.Api.Idempotency;
 using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Actions.Teams;
 using Andes.Mailer.Dto.Pagination;
 using Andes.Mailer.Dto.Teams;
+using Andes.Mailer.Service.Security;
 using Andes.Mailer.Service.Teams;
 
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -36,6 +40,13 @@ internal static class TeamMemberEndpoints
         return TypedResults.NoContent();
     }
 
+    private static async Task<NoContent> LeaveTeam(Guid teamId, ClaimsPrincipal caller, ITeamMemberService members, CancellationToken cancellationToken)
+    {
+        await members.LeaveAsync(teamId, caller.GetCallerId(), cancellationToken);
+
+        return TypedResults.NoContent();
+    }
+
     #endregion
 
     #region Public static methods
@@ -63,6 +74,7 @@ internal static class TeamMemberEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapPost("/", AddTeamMember)
+            .WithIdempotency()
             .AddEndpointFilter(new TeamPermissionEndpointFilter(Permissions.CreateTeamUser))
             .AddEndpointFilter<ValidationEndpointFilter<AddTeamMemberActionDto>>()
             .WithName(nameof(AddTeamMember))
@@ -73,6 +85,7 @@ internal static class TeamMemberEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapPut("/{userId:guid}", UpdateTeamMember)
+            .WithIdempotency()
             .AddEndpointFilter(new TeamPermissionEndpointFilter(Permissions.ModifyTeamUser))
             .AddEndpointFilter<ValidationEndpointFilter<UpdateTeamMemberActionDto>>()
             .WithName(nameof(UpdateTeamMember))
@@ -83,9 +96,20 @@ internal static class TeamMemberEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapDelete("/{userId:guid}", RemoveTeamMember)
+            .WithIdempotency()
             .AddEndpointFilter(new TeamPermissionEndpointFilter(Permissions.DeactivateTeamUser))
             .WithName(nameof(RemoveTeamMember))
             .WithSummary("Removes a member from a team; the user stays in their other teams.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        // A literal segment, so it never collides with the {userId:guid} route above.
+        group.MapDelete("/me", LeaveTeam)
+            .WithIdempotency()
+            .AddEndpointFilter(new TeamPermissionEndpointFilter(Permissions.ViewTeam))
+            .WithName(nameof(LeaveTeam))
+            .WithSummary("Removes the signed-in user from a team they belong to.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);

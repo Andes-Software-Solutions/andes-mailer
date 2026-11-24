@@ -188,7 +188,9 @@ public sealed class UserEndpointsIntegrationTests(SqlServerFixture fixture, Azur
         Assert.Contains(Permissions.ModifyTeamUser, only.Permissions);
         Assert.Contains(Permissions.SendTeamEmails, only.Permissions);
         Assert.Contains(Permissions.ManageTeamContactGroups, only.Permissions);
-        Assert.DoesNotContain(Permissions.ModifyTeam, only.Permissions);
+        Assert.Contains(Permissions.ModifyTeam, only.Permissions);
+        Assert.DoesNotContain(Permissions.CreateTeam, only.Permissions);
+        Assert.DoesNotContain(Permissions.DeactivateTeam, only.Permissions);
     }
 
     [Fact]

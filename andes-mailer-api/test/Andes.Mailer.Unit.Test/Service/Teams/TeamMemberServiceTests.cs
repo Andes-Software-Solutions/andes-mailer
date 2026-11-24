@@ -231,6 +231,42 @@ public sealed class TeamMemberServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task LeaveAsync_Member_DeactivatesOwnMembership()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var user = await _fixture.AddUserAsync("ada@contoso.com");
+        await _fixture.AddTeamMemberAsync(team.Id, user.Id);
+        await using var ctx = _fixture.CreateContext();
+
+        await CreateService(ctx).LeaveAsync(team.Id, user.Id, TestContext.Current.CancellationToken);
+
+        await using var readCtx = _fixture.CreateContext();
+        Assert.False(await readCtx.TeamMembers.AnyAsync(m => m.TeamId == team.Id && m.UserId == user.Id, TestContext.Current.CancellationToken));
+        Assert.True(await readCtx.Users.AnyAsync(u => u.Id == user.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task LeaveAsync_LastAdministrator_ThrowsConflict()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var user = await _fixture.AddUserAsync("ada@contoso.com");
+        await _fixture.AddTeamMemberAsync(team.Id, user.Id, Roles.TeamAdministrator);
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<ConflictException>(() => CreateService(ctx).LeaveAsync(team.Id, user.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task LeaveAsync_NotAMember_ThrowsNotFound()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var admin = await _fixture.AddUserAsync("ada@contoso.com", role: Roles.Administrator);
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<NotFoundException>(() => CreateService(ctx).LeaveAsync(team.Id, admin.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task RemoveAsync_NotAMember_ThrowsNotFound()
     {
         var team = await _fixture.AddTeamAsync();

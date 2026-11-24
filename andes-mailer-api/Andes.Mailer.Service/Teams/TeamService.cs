@@ -4,6 +4,7 @@ using Andes.Mailer.Dto.Pagination;
 using Andes.Mailer.Dto.Teams;
 using Andes.Mailer.Entity.Teams;
 using Andes.Mailer.Repository.Sql.DbContexts;
+using Andes.Mailer.Service.Emails;
 using Andes.Mailer.Service.Exceptions;
 using Andes.Mailer.Service.Security;
 using Andes.Mailer.Service.Users;
@@ -48,15 +49,17 @@ public interface ITeamService
     Task<TeamDto> CreateAsync(CreateTeamActionDto action, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Replaces an active team's details.
+    /// Replaces an active team's details and settings.
     /// </summary>
+    /// <param name="callerId">The Entra object id of the signed-in user; only a caller whose global role grants <see cref="Permissions.ModifyTeam"/> may change the service account.</param>
     /// <param name="id">The team's id.</param>
-    /// <param name="action">The new details and the row version the caller last read.</param>
+    /// <param name="action">The new details and settings and the row version the caller last read.</param>
     /// <param name="cancellationToken">A token that cancels the operation.</param>
     /// <returns>The updated team.</returns>
     /// <exception cref="NotFoundException">No active team has the id, or no directory account owns a new service account's address.</exception>
+    /// <exception cref="ForbiddenException">The service account changes and the caller holds <see cref="Permissions.ModifyTeam"/> only through a team role.</exception>
     /// <exception cref="ConflictException">Another active team has the name or the service account, or the team changed since the caller read it.</exception>
-    Task<TeamDto> UpdateAsync(Guid id, UpdateTeamActionDto action, CancellationToken cancellationToken);
+    Task<TeamDto> UpdateAsync(Guid callerId, Guid id, UpdateTeamActionDto action, CancellationToken cancellationToken);
 
     /// <summary>
     /// Deactivates an active team, which hides its memberships and emails with it.
@@ -105,6 +108,7 @@ public sealed class TeamService(AndesMailerDbContext ctx, IDirectoryUserService 
                 t.Name,
                 t.Description,
                 t.ServiceAccountEmail,
+                t.AvatarColorId,
                 t.Members.Count,
                 t.Members.Where(m => m.UserId == callerId).Select(m => (Roles?)m.RoleId).FirstOrDefault()))
             .ToListAsync(cancellationToken);
@@ -136,16 +140,17 @@ public sealed class TeamService(AndesMailerDbContext ctx, IDirectoryUserService 
             Description = NormalizeDescription(action.Description),
             ServiceAccountEmail = account.Email,
             ServiceAccountId = account.Id,
+            AvatarColorId = action.AvatarColor,
         };
         await EnsureAvailableAsync(team, cancellationToken);
         _ctx.Add(team);
         await SaveAsync(team, cancellationToken);
 
-        return TeamMapper.MapToTeamDto(team);
+        return TeamMapper.MapToNewTeamDto(team);
     }
 
     /// <inheritdoc/>
-    public async Task<TeamDto> UpdateAsync(Guid id, UpdateTeamActionDto action, CancellationToken cancellationToken)
+    public async Task<TeamDto> UpdateAsync(Guid callerId, Guid id, UpdateTeamActionDto action, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(action);
 
@@ -155,6 +160,12 @@ public sealed class TeamService(AndesMailerDbContext ctx, IDirectoryUserService 
         // The directory is asked again only for a new address, so renaming a team never depends on Graph being reachable.
         if (!string.Equals(action.ServiceAccountEmail.Trim(), team.ServiceAccountEmail, StringComparison.OrdinalIgnoreCase))
         {
+            // A team administrator edits their own team, but the mailbox decides who the mail comes from, so it stays with the global role.
+            if (!await _permissions.HasPermissionAsync(callerId, Permissions.ModifyTeam, cancellationToken))
+            {
+                throw new ForbiddenException("Only an administrator can change the team's service mailbox.");
+            }
+
             var account = await FindServiceAccountAsync(action.ServiceAccountEmail, cancellationToken);
             team.ServiceAccountEmail = account.Email;
             team.ServiceAccountId = account.Id;
@@ -164,10 +175,13 @@ public sealed class TeamService(AndesMailerDbContext ctx, IDirectoryUserService 
         _ctx.Entry(team).Property(t => t.Version).OriginalValue = Convert.FromBase64String(action.Version);
         team.Name = action.Name.Trim();
         team.Description = NormalizeDescription(action.Description);
+        team.AvatarColorId = action.AvatarColor;
+        team.DefaultSignature = NormalizeSignature(action.DefaultSignature);
+        team.ConfirmRecipientsAbove = action.ConfirmRecipientsAbove;
         await EnsureAvailableAsync(team, cancellationToken);
         await SaveAsync(team, cancellationToken);
 
-        return TeamMapper.MapToTeamDto(team);
+        return await GetAsync(id, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -185,6 +199,14 @@ public sealed class TeamService(AndesMailerDbContext ctx, IDirectoryUserService 
 
     private static string? NormalizeDescription(string? description) =>
         string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+
+    // Sanitized like an email body, because the signature is pasted into new emails and rendered as HTML.
+    private static string? NormalizeSignature(string? signature)
+    {
+        var sanitized = EmailBodySanitizer.Sanitize(signature ?? string.Empty);
+
+        return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
+    }
 
     private async Task<DirectoryUser> FindServiceAccountAsync(string email, CancellationToken cancellationToken) =>
         await _directory.FindByEmailAsync(email.Trim().ToLowerInvariant(), cancellationToken)

@@ -1,4 +1,5 @@
 using Andes.Mailer.Common.Constants.Teams;
+using Andes.Mailer.Common.Enums;
 
 using FluentValidation;
 
@@ -10,7 +11,8 @@ namespace Andes.Mailer.Dto.Actions.Teams;
 /// <param name="Name">The name.</param>
 /// <param name="Description">The description, or <see langword="null"/> for none.</param>
 /// <param name="ServiceAccountEmail">The email address of the directory mailbox the team sends from.</param>
-public sealed record CreateTeamActionDto(string Name, string? Description, string ServiceAccountEmail);
+/// <param name="AvatarColor">One of the enumeration values that specifies the colour of the team's avatar; <see cref="TeamColors.Mint"/> when omitted.</param>
+public sealed record CreateTeamActionDto(string Name, string? Description, string ServiceAccountEmail, TeamColors AvatarColor = TeamColors.Mint);
 
 /// <summary>
 /// Validates a <see cref="CreateTeamActionDto"/>.
@@ -28,5 +30,6 @@ public sealed class CreateTeamActionDtoValidator : AbstractValidator<CreateTeamA
             .NotEmpty()
             .MaximumLength(TeamLimits.ServiceAccountEmailMaxLength)
             .EmailAddress();
+        RuleFor(a => a.AvatarColor).IsInEnum();
     }
 }

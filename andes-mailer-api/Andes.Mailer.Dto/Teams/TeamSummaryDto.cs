@@ -9,6 +9,7 @@ namespace Andes.Mailer.Dto.Teams;
 /// <param name="Name">The name.</param>
 /// <param name="Description">The description, or <see langword="null"/> if there is none.</param>
 /// <param name="ServiceAccountEmail">The email address of the mailbox the team sends from, in lowercase.</param>
+/// <param name="AvatarColor">One of the enumeration values that specifies the colour of the team's avatar.</param>
 /// <param name="MemberCount">The number of active members.</param>
 /// <param name="Role">The role the signed-in user holds in the team, or <see langword="null"/> if they are not a member.</param>
 public sealed record TeamSummaryDto(
@@ -16,5 +17,6 @@ public sealed record TeamSummaryDto(
     string Name,
     string? Description,
     string ServiceAccountEmail,
+    TeamColors AvatarColor,
     int MemberCount,
     Roles? Role);

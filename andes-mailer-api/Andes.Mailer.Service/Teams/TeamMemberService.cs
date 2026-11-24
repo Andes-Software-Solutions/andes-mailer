@@ -72,6 +72,17 @@ public interface ITeamMemberService
     /// <exception cref="NotFoundException">The user is not an active member of the team.</exception>
     /// <exception cref="ConflictException">The member is the team's last team administrator, or the membership or team changed during the operation.</exception>
     Task RemoveAsync(Guid teamId, Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes the signed-in user from a team they belong to. The user stays active and stays in their other teams.
+    /// </summary>
+    /// <param name="teamId">The team's id.</param>
+    /// <param name="callerId">The Entra object id of the signed-in user.</param>
+    /// <param name="cancellationToken">A token that cancels the operation.</param>
+    /// <returns>A task that completes when the membership is deactivated.</returns>
+    /// <exception cref="NotFoundException">The caller is not an active member of the team, including a global administrator who sees it through their role only.</exception>
+    /// <exception cref="ConflictException">The caller is the team's last team administrator, or the membership or team changed during the operation.</exception>
+    Task LeaveAsync(Guid teamId, Guid callerId, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -194,17 +205,30 @@ public sealed class TeamMemberService(AndesMailerDbContext ctx, IUserService use
     public async Task RemoveAsync(Guid teamId, Guid userId, CancellationToken cancellationToken)
     {
         var member = await FindAsync(teamId, userId, cancellationToken);
+        await DeactivateAsync(member, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task LeaveAsync(Guid teamId, Guid callerId, CancellationToken cancellationToken)
+    {
+        var member = await _ctx.TeamMembers.FirstOrDefaultAsync(m => m.TeamId == teamId && m.UserId == callerId, cancellationToken)
+            ?? throw new NotFoundException("You are not a member of this team.");
+        await DeactivateAsync(member, cancellationToken);
+    }
+
+    #region Private methods
+
+    private async Task DeactivateAsync(TeamMember member, CancellationToken cancellationToken)
+    {
         if (member.RoleId == Roles.TeamAdministrator)
         {
-            await GuardLastAdministratorAsync(teamId, userId, cancellationToken);
+            await GuardLastAdministratorAsync(member.TeamId, member.UserId, cancellationToken);
         }
 
         // DeactivationInterceptor turns the delete into a DateDeactivated stamp; the user row is untouched.
         _ctx.Remove(member);
         await SaveAsync(cancellationToken);
     }
-
-    #region Private methods
 
     private async Task<TeamMember> FindAsync(Guid teamId, Guid userId, CancellationToken cancellationToken) =>
         await _ctx.TeamMembers.FirstOrDefaultAsync(m => m.TeamId == teamId && m.UserId == userId, cancellationToken)

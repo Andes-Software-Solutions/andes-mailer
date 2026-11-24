@@ -95,11 +95,13 @@ public sealed class TeamServiceTests : IDisposable
     public async Task UpdateAsync_SameServiceAccount_RenamesWithoutAskingDirectory()
     {
         var team = await _fixture.AddTeamAsync("Sales", "sales@contoso.com");
+        var caller = await _fixture.AddUserAsync("ada@contoso.com");
         await using var ctx = _fixture.CreateContext();
 
         var updated = await CreateService(ctx).UpdateAsync(
+            caller.Id,
             team.Id,
-            new UpdateTeamActionDto("Sales EMEA", "Europe", "SALES@contoso.com", Convert.ToBase64String(team.Version)),
+            Settings("Sales EMEA", "Europe", "SALES@contoso.com", team.Version),
             TestContext.Current.CancellationToken);
 
         Assert.Equal("Sales EMEA", updated.Name);
@@ -108,30 +110,83 @@ public sealed class TeamServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UpdateAsync_NewServiceAccount_VerifiesItInDirectory()
+    public async Task UpdateAsync_AdministratorChangesServiceAccount_VerifiesItInDirectory()
     {
         var team = await _fixture.AddTeamAsync("Sales", "sales@contoso.com");
+        var admin = await _fixture.AddUserAsync("ada@contoso.com", role: Roles.Administrator);
         var mailbox = new DirectoryUser(Guid.NewGuid(), "Orders", string.Empty, "orders@contoso.com");
         _directory.FindByEmailAsync("orders@contoso.com", Arg.Any<CancellationToken>()).Returns(mailbox);
         await using var ctx = _fixture.CreateContext();
 
         var updated = await CreateService(ctx).UpdateAsync(
+            admin.Id,
             team.Id,
-            new UpdateTeamActionDto("Sales", null, "orders@contoso.com", Convert.ToBase64String(team.Version)),
+            Settings("Sales", null, "orders@contoso.com", team.Version),
             TestContext.Current.CancellationToken);
 
         Assert.Equal("orders@contoso.com", updated.ServiceAccountEmail);
     }
 
     [Fact]
+    public async Task UpdateAsync_TeamAdministratorChangesServiceAccount_ThrowsForbidden()
+    {
+        var team = await _fixture.AddTeamAsync("Sales", "sales@contoso.com");
+        var teamAdmin = await _fixture.AddUserAsync("ada@contoso.com");
+        await _fixture.AddTeamMemberAsync(team.Id, teamAdmin.Id, Roles.TeamAdministrator);
+        await using var ctx = _fixture.CreateContext();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => CreateService(ctx).UpdateAsync(
+            teamAdmin.Id,
+            team.Id,
+            Settings("Sales", null, "orders@contoso.com", team.Version),
+            TestContext.Current.CancellationToken));
+        await _directory.DidNotReceive().FindByEmailAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task UpdateAsync_Settings_StoresThemWithSanitizedSignature()
+    {
+        var team = await _fixture.AddTeamAsync("Sales", "sales@contoso.com");
+        var caller = await _fixture.AddUserAsync("ada@contoso.com");
+        await using var ctx = _fixture.CreateContext();
+        var action = Settings("Sales", null, "sales@contoso.com", team.Version) with
+        {
+            AvatarColor = TeamColors.Ocean,
+            DefaultSignature = "<p><strong>Sales</strong></p><script>alert(1)</script>",
+            ConfirmRecipientsAbove = 120,
+        };
+
+        var updated = await CreateService(ctx).UpdateAsync(caller.Id, team.Id, action, TestContext.Current.CancellationToken);
+
+        Assert.Equal(TeamColors.Ocean, updated.AvatarColor);
+        Assert.Equal("<p><strong>Sales</strong></p>", updated.DefaultSignature);
+        Assert.Equal(120, updated.ConfirmRecipientsAbove);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_SignatureEmptyAfterSanitizing_StoresNone()
+    {
+        var team = await _fixture.AddTeamAsync("Sales", "sales@contoso.com");
+        var caller = await _fixture.AddUserAsync("ada@contoso.com");
+        await using var ctx = _fixture.CreateContext();
+        var action = Settings("Sales", null, "sales@contoso.com", team.Version) with { DefaultSignature = "<script>alert(1)</script>" };
+
+        var updated = await CreateService(ctx).UpdateAsync(caller.Id, team.Id, action, TestContext.Current.CancellationToken);
+
+        Assert.Null(updated.DefaultSignature);
+    }
+
+    [Fact]
     public async Task UpdateAsync_StaleVersion_ThrowsConflict()
     {
         var team = await _fixture.AddTeamAsync("Sales", "sales@contoso.com");
+        var caller = await _fixture.AddUserAsync("ada@contoso.com");
         await using var ctx = _fixture.CreateContext();
 
         await Assert.ThrowsAsync<ConflictException>(() => CreateService(ctx).UpdateAsync(
+            caller.Id,
             team.Id,
-            new UpdateTeamActionDto("Sales", null, "sales@contoso.com", Convert.ToBase64String(new byte[8])),
+            Settings("Sales", null, "sales@contoso.com", new byte[8]),
             TestContext.Current.CancellationToken));
     }
 
@@ -140,12 +195,43 @@ public sealed class TeamServiceTests : IDisposable
     {
         await _fixture.AddTeamAsync("Support");
         var team = await _fixture.AddTeamAsync("Sales", "sales@contoso.com");
+        var caller = await _fixture.AddUserAsync("ada@contoso.com");
         await using var ctx = _fixture.CreateContext();
 
         await Assert.ThrowsAsync<ConflictException>(() => CreateService(ctx).UpdateAsync(
+            caller.Id,
             team.Id,
-            new UpdateTeamActionDto("Support", null, "sales@contoso.com", Convert.ToBase64String(team.Version)),
+            Settings("Support", null, "sales@contoso.com", team.Version),
             TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task GetAsync_TeamWithMembers_CountsMembersAndAdministrators()
+    {
+        var team = await _fixture.AddTeamAsync();
+        var ada = await _fixture.AddUserAsync("ada@contoso.com");
+        var bo = await _fixture.AddUserAsync("bo@contoso.com");
+        await _fixture.AddTeamMemberAsync(team.Id, ada.Id, Roles.TeamAdministrator);
+        await _fixture.AddTeamMemberAsync(team.Id, bo.Id);
+        await using var ctx = _fixture.CreateContext();
+
+        var dto = await CreateService(ctx).GetAsync(team.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, dto.MemberCount);
+        Assert.Equal(1, dto.AdministratorCount);
+    }
+
+    [Fact]
+    public async Task CreateAsync_AvatarColor_StoresItWithDefaultSettings()
+    {
+        _directory.FindByEmailAsync("sales@contoso.com", Arg.Any<CancellationToken>()).Returns(new DirectoryUser(Guid.NewGuid(), "Sales", string.Empty, "sales@contoso.com"));
+        await using var ctx = _fixture.CreateContext();
+
+        var team = await CreateService(ctx).CreateAsync(new CreateTeamActionDto("Sales", null, "sales@contoso.com", TeamColors.Sky), TestContext.Current.CancellationToken);
+
+        Assert.Equal(TeamColors.Sky, team.AvatarColor);
+        Assert.Equal(50, team.ConfirmRecipientsAbove);
+        Assert.Equal(0, team.MemberCount);
     }
 
     [Fact]
@@ -197,6 +283,9 @@ public sealed class TeamServiceTests : IDisposable
     public void Dispose() => _fixture.Dispose();
 
     #region Private methods
+
+    private static UpdateTeamActionDto Settings(string name, string? description, string serviceAccountEmail, byte[] version) =>
+        new(name, description, serviceAccountEmail, TeamColors.Mint, null, 50, Convert.ToBase64String(version));
 
     private TeamService CreateService(AndesMailerDbContext ctx) => new(ctx, _directory, new PermissionService(ctx));
 

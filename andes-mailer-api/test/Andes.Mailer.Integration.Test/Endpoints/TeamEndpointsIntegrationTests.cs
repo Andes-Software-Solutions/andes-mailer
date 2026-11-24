@@ -133,12 +133,96 @@ public sealed class TeamEndpointsIntegrationTests(SqlServerFixture fixture, Azur
         await using var factory = CreateFactory();
         using var client = TestCallers.CreateClient(factory, caller);
         var current = await client.GetFromJsonAsync<TeamDto>($"{TeamsPath}/{team}", ApiJson.Options, TestContext.Current.CancellationToken);
-        using var first = await client.PutAsJsonAsync($"{TeamsPath}/{team}", new UpdateTeamActionDto(UniqueName(), null, current!.ServiceAccountEmail, current.Version), ApiJson.Options, TestContext.Current.CancellationToken);
+        using var first = await client.PutAsJsonAsync($"{TeamsPath}/{team}", UpdateFrom(current!, UniqueName()), ApiJson.Options, TestContext.Current.CancellationToken);
 
-        using var second = await client.PutAsJsonAsync($"{TeamsPath}/{team}", new UpdateTeamActionDto(UniqueName(), null, current.ServiceAccountEmail, current.Version), ApiJson.Options, TestContext.Current.CancellationToken);
+        using var second = await client.PutAsJsonAsync($"{TeamsPath}/{team}", UpdateFrom(current!, UniqueName()), ApiJson.Options, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateTeam_TeamAdministrator_SavesSettings()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, caller);
+        var current = await client.GetFromJsonAsync<TeamDto>($"{TeamsPath}/{team}", ApiJson.Options, TestContext.Current.CancellationToken);
+        var action = UpdateFrom(current!, UniqueName()) with
+        {
+            AvatarColor = TeamColors.Green,
+            ConfirmRecipientsAbove = 200,
+        };
+
+        using var response = await client.PutAsJsonAsync($"{TeamsPath}/{team}", action, ApiJson.Options, TestContext.Current.CancellationToken);
+        var updated = await response.Content.ReadFromJsonAsync<TeamDto>(ApiJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(TeamColors.Green, updated!.AvatarColor);
+        Assert.Equal(200, updated.ConfirmRecipientsAbove);
+        Assert.Equal(1, updated.AdministratorCount);
+    }
+
+    [Fact]
+    public async Task UpdateTeam_TeamAdministratorChangesMailbox_ReturnsForbidden()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        var mailbox = StubMailbox();
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, caller);
+        var current = await client.GetFromJsonAsync<TeamDto>($"{TeamsPath}/{team}", ApiJson.Options, TestContext.Current.CancellationToken);
+
+        using var response = await client.PutAsJsonAsync($"{TeamsPath}/{team}", UpdateFrom(current!, current!.Name) with { ServiceAccountEmail = mailbox.Email }, ApiJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await _directory.DidNotReceive().FindByEmailAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task UpdateTeam_TeamMember_ReturnsForbidden()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, caller);
+        var current = await client.GetFromJsonAsync<TeamDto>($"{TeamsPath}/{team}", ApiJson.Options, TestContext.Current.CancellationToken);
+
+        using var response = await client.PutAsJsonAsync($"{TeamsPath}/{team}", UpdateFrom(current!, UniqueName()), ApiJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateTeam_OutsiderTeamAdministrator_ReturnsNotFound()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var otherTeam = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, otherTeam, Roles.TeamAdministrator);
+        var admin = await TestCallers.SeedAsync(_fixture, Roles.Administrator);
+        await using var factory = CreateFactory();
+        using var adminClient = TestCallers.CreateClient(factory, admin);
+        var current = await adminClient.GetFromJsonAsync<TeamDto>($"{TeamsPath}/{team}", ApiJson.Options, TestContext.Current.CancellationToken);
+        using var client = TestCallers.CreateClient(factory, caller);
+
+        using var response = await client.PutAsJsonAsync($"{TeamsPath}/{team}", UpdateFrom(current!, UniqueName()), ApiJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateTeam_ThresholdOutOfRange_ReturnsBadRequest()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedAsync(_fixture, Roles.Administrator);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, caller);
+        var current = await client.GetFromJsonAsync<TeamDto>($"{TeamsPath}/{team}", ApiJson.Options, TestContext.Current.CancellationToken);
+
+        using var response = await client.PutAsJsonAsync($"{TeamsPath}/{team}", UpdateFrom(current!, UniqueName()) with { ConfirmRecipientsAbove = 0 }, ApiJson.Options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -166,6 +250,15 @@ public sealed class TeamEndpointsIntegrationTests(SqlServerFixture fixture, Azur
     #region Private methods
 
     private static string UniqueName() => $"Team {Guid.NewGuid():N}";
+
+    private static UpdateTeamActionDto UpdateFrom(TeamDto team, string name) => new(
+        name,
+        team.Description,
+        team.ServiceAccountEmail,
+        team.AvatarColor,
+        team.DefaultSignature,
+        team.ConfirmRecipientsAbove,
+        team.Version);
 
     private DirectoryUser StubMailbox()
     {
