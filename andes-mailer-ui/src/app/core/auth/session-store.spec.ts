@@ -100,6 +100,54 @@ describe('SessionStore', () => {
     });
   });
 
+  describe('refresh', () => {
+    it('keeps the active team while the account still lists it', async () => {
+      const store = setup();
+      seedSession(memberUser, communicationsTeam.id);
+
+      const refreshed = store.refresh();
+      backend.expectOne(meUrl).flush({ ...memberUser, name: 'Maria L.' });
+      await refreshed;
+
+      expect(store.user()?.name).toBe('Maria L.');
+      expect(store.activeTeam()?.id).toBe(communicationsTeam.id);
+      expect(store.status()).toBe('loaded');
+    });
+
+    it('falls back to the first team after leaving the active one', async () => {
+      const store = setup();
+      seedSession(memberUser, communicationsTeam.id);
+
+      const refreshed = store.refresh();
+      backend.expectOne(meUrl).flush({ ...memberUser, teams: [hrTeam] });
+      await refreshed;
+
+      expect(store.activeTeam()?.id).toBe(hrTeam.id);
+    });
+
+    it('keeps what it has when the account cannot be read', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = setup();
+      seedSession(memberUser, communicationsTeam.id);
+
+      const refreshed = store.refresh();
+      backend.expectOne(meUrl).flush(null, { status: 503, statusText: 'Unavailable' });
+      await refreshed;
+
+      expect(store.status()).toBe('loaded');
+      expect(store.user()).toEqual(memberUser);
+    });
+
+    it('reports whether a team switch happened', () => {
+      const store = setup();
+      seedSession(memberUser);
+
+      expect(store.selectTeam(communicationsTeam.id)).toBe(true);
+      expect(store.selectTeam('not-a-team')).toBe(false);
+      expect(store.activeTeam()?.id).toBe(communicationsTeam.id);
+    });
+  });
+
   describe('access', () => {
     it('reports an inactive account as having no access', () => {
       const store = setup();

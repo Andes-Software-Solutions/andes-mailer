@@ -1,0 +1,61 @@
+.search {
+  flex: 1 1 18rem;
+  max-width: 26rem;
+}
+
+.avatar-member {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.role-select {
+  width: auto;
+  min-width: 9.5rem;
+}
+
+.role-select-mobile {
+  width: auto;
+  min-width: 10rem;
+  height: 2.75rem;
+}
+
+.mcard.is-new {
+  background-color: var(--am-accent-bg);
+}
+
+.divider {
+  height: 1px;
+  background-color: var(--bs-border-color);
+}
+
+.min-w-0 {
+  min-width: 0;
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--bs-border-color);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+}
+
+.sk-avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+}
+
+.sk-line {
+  width: 40%;
+  height: 0.75rem;
+}
+
+.sk-line-short {
+  width: 25%;
+  height: 0.625rem;
+}

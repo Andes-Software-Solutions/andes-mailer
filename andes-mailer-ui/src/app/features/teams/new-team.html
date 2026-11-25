@@ -1,0 +1,128 @@
+<app-modal-dialog
+  labelledBy="new-team-title"
+  [busy]="store.creating()"
+  (dismissed)="dismissed.emit()"
+>
+  <form class="d-contents" novalidate (submit)="save($event)">
+    <div class="modal-header border-0">
+      <h2 class="modal-title flex-grow-1" id="new-team-title">New team</h2>
+      <button
+        type="button"
+        class="btn btn-ghost btn-icon btn-sm"
+        aria-label="Close"
+        [disabled]="store.creating()"
+        (click)="dismissed.emit()"
+      >
+        <i class="bi bi-x-lg" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    <div class="modal-body d-flex flex-column gap-3 pt-0">
+      @if (error(); as message) {
+        <div class="alert alert-danger mb-0" role="alert">
+          <i class="bi bi-exclamation-octagon" aria-hidden="true"></i>
+          <span>{{ message }}</span>
+        </div>
+      }
+
+      <div>
+        <label class="form-label" for="new-team-name">Team name</label>
+        <input
+          id="new-team-name"
+          class="form-control"
+          aria-describedby="new-team-name-error"
+          [class.is-invalid]="form.name().touched() && form.name().invalid()"
+          [formField]="form.name"
+        />
+        @if (form.name().touched() && form.name().errors()[0]; as fieldError) {
+          <div id="new-team-name-error" class="invalid-feedback d-block">
+            {{ fieldError.message }}
+          </div>
+        }
+      </div>
+
+      <div>
+        <label class="form-label" for="new-team-mailbox">Sends from</label>
+        <app-email-autocomplete
+          inputId="new-team-mailbox"
+          placeholder="Search or type the mailbox address"
+          describedBy="new-team-mailbox-hint new-team-mailbox-error"
+          [suggest]="suggestMailbox"
+          [markInvalid]="!!mailboxError()"
+          [formField]="form.serviceAccountEmail"
+        />
+        <div id="new-team-mailbox-hint" class="form-text">
+          A shared mailbox in the directory. Every email from this team is sent from it.
+        </div>
+        @if (mailboxError(); as message) {
+          <div id="new-team-mailbox-error" class="invalid-feedback d-block">{{ message }}</div>
+        } @else if (
+          form.serviceAccountEmail().touched() && form.serviceAccountEmail().errors()[0];
+          as fieldError
+        ) {
+          <div id="new-team-mailbox-error" class="invalid-feedback d-block">
+            {{ fieldError.message }}
+          </div>
+        }
+      </div>
+
+      <div>
+        <label class="form-label" for="new-team-description"
+          >Description <span class="text-body-secondary">(optional)</span></label
+        >
+        <textarea
+          id="new-team-description"
+          class="form-control"
+          rows="2"
+          aria-describedby="new-team-description-error"
+          [formField]="form.description"
+        ></textarea>
+        @if (form.description().errors()[0]; as fieldError) {
+          <div id="new-team-description-error" class="invalid-feedback d-block">
+            {{ fieldError.message }}
+          </div>
+        }
+      </div>
+
+      <fieldset>
+        <legend class="form-label">Team avatar colour</legend>
+        <div class="d-flex flex-wrap gap-2">
+          @for (color of colors; track color) {
+            <button
+              type="button"
+              class="swatch"
+              [attr.aria-pressed]="model().avatarColor === color"
+              [attr.aria-label]="colorLabels[color]"
+              [disabled]="store.creating()"
+              (click)="setColor(color)"
+            >
+              <app-team-avatar [name]="model().name || 'Team'" [color]="color" />
+            </button>
+          }
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="modal-footer">
+      <button
+        type="button"
+        class="btn btn-outline"
+        [disabled]="store.creating()"
+        (click)="dismissed.emit()"
+      >
+        Cancel
+      </button>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        [disabled]="store.creating()"
+        [attr.aria-busy]="store.creating() || null"
+      >
+        @if (store.creating()) {
+          <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+        }
+        Create team
+      </button>
+    </div>
+  </form>
+</app-modal-dialog>

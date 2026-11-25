@@ -10,7 +10,7 @@
     [disabled]="options().length === 0"
   >
     @if (active(); as current) {
-      <span class="avatar avatar-team" aria-hidden="true">{{ current.initials }}</span>
+      <app-team-avatar [name]="current.team.name" [color]="current.team.avatarColor" />
       <span class="ts-name text-truncate">{{ current.team.name }}</span>
       @if (current.badge && !compact()) {
         <span class="badge" [class]="current.badge.cssClass">{{ current.badge.label }}</span>
@@ -32,7 +32,7 @@
           [attr.aria-checked]="option.team.id === active()?.team?.id"
           (click)="select(option.team.id)"
         >
-          <span class="avatar avatar-team" aria-hidden="true">{{ option.initials }}</span>
+          <app-team-avatar [name]="option.team.name" [color]="option.team.avatarColor" />
           <span class="text-truncate">{{ option.team.name }}</span>
           @if (option.badge) {
             <span class="badge ms-auto" [class]="option.badge.cssClass">{{

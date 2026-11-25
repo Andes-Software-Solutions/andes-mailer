@@ -1,0 +1,35 @@
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.75rem;
+  background-color: var(--am-surface);
+}
+
+.min-w-0 {
+  min-width: 0;
+}
+
+.flex-none {
+  flex: none;
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+}
+
+.sk-avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+}
+
+.sk-line {
+  width: 40%;
+  height: 0.75rem;
+}

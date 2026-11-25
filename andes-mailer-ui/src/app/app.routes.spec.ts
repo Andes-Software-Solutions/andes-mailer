@@ -135,7 +135,34 @@ describe('routes', () => {
 
     await harness.navigateByUrl('/team/members', Shell);
 
-    expect(page(harness, 'app-coming-soon')?.textContent).toContain('Team members');
+    expect(page(harness, 'app-team-members')).not.toBeNull();
+  });
+
+  it('opens the teams page only for a global administrator', async () => {
+    const harness = await setup(signedInMsal());
+    seedSession(adminUser);
+
+    await harness.navigateByUrl('/teams', Shell);
+
+    expect(page(harness, 'app-teams')).not.toBeNull();
+  });
+
+  it('keeps a team administrator out of the teams page', async () => {
+    const harness = await setup(signedInMsal());
+    seedSession(memberUser, memberUser.teams[1].id);
+
+    await harness.navigateByUrl('/teams');
+
+    expect(path()).toBe('/');
+  });
+
+  it('opens team settings for a team administrator', async () => {
+    const harness = await setup(signedInMsal());
+    seedSession(memberUser, memberUser.teams[1].id);
+
+    await harness.navigateByUrl('/team/settings', Shell);
+
+    expect(page(harness, 'app-team-settings')).not.toBeNull();
   });
 
   it('sends a sign-in that came back failed to the failure page', async () => {

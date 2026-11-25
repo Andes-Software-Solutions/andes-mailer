@@ -11,19 +11,19 @@ import {
 } from '@angular/core';
 import { CurrentUserTeam } from '@core/api/current-user.model';
 import { SessionStore } from '@core/auth/session-store';
-import { initials } from '@shared/formatting/initials';
+import { TeamAvatar } from '@shared/team-avatar/team-avatar';
 import { attachDropdown } from './attach-dropdown';
 import { RoleBadge, roleBadge } from './role-badge';
 
 interface TeamOption {
   readonly team: CurrentUserTeam;
-  readonly initials: string;
   readonly badge: RoleBadge | null;
 }
 
 /** Picks the team the person works in; the nav and every permission check follow it. */
 @Component({
   selector: 'app-team-switcher',
+  imports: [TeamAvatar],
   styleUrl: './team-switcher.scss',
   templateUrl: './team-switcher.html',
   host: { '[class.compact]': 'compact()' },
@@ -38,7 +38,6 @@ export class TeamSwitcher {
   protected readonly options = computed<readonly TeamOption[]>(() =>
     this._session.teams().map((team) => ({
       team,
-      initials: initials(team.name),
       badge: roleBadge(team.role, this._session.isAdministrator()),
     })),
   );

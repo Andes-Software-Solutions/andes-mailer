@@ -1,0 +1,70 @@
+// The native <dialog> with Bootstrap's modal surfaces: .modal-content and its header, body, footer.
+.am-dialog {
+  width: calc(100% - 2rem);
+  max-width: 500px;
+  max-height: calc(100dvh - 4rem);
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  color: var(--bs-body-color);
+
+  // Bootstrap sets these on .modal only; the projected .modal-header, -body and -footer read them.
+  --bs-modal-padding: 1.5rem;
+  --bs-modal-header-padding: 1.25rem 1.5rem 0.75rem;
+  --bs-modal-header-border-width: 0;
+  --bs-modal-header-border-color: transparent;
+  --bs-modal-title-line-height: 1.75rem;
+  --bs-modal-footer-gap: 0.75rem;
+  --bs-modal-footer-bg: transparent;
+  --bs-modal-footer-border-width: 1px;
+  --bs-modal-footer-border-color: var(--bs-border-color);
+  --bs-modal-inner-border-radius: 1rem;
+
+  &::backdrop {
+    background-color: var(--am-overlay);
+  }
+
+  &.am-dialog-sm {
+    max-width: 420px;
+  }
+
+  &.am-dialog-lg {
+    max-width: 640px;
+  }
+
+  .modal-content {
+    max-height: calc(100dvh - 4rem);
+    overflow: hidden;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 1rem;
+    background-color: var(--am-float);
+    box-shadow: var(--am-shadow);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .am-dialog {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+
+    .modal-content {
+      height: 100%;
+      max-height: none;
+      border: 0;
+      border-radius: 0;
+    }
+
+    &.am-dialog-sheet {
+      height: auto;
+      margin-top: auto;
+
+      .modal-content {
+        border-radius: 1.25rem 1.25rem 0 0;
+      }
+    }
+  }
+}

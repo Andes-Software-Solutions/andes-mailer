@@ -20,6 +20,25 @@
   --am-signin-bottom: #edfbf5;
   --am-shadow: 0 18px 44px -14px rgba(10, 70, 91, 0.24), 0 4px 10px -2px rgba(10, 70, 91, 0.08);
   --am-shadow-sm: 0 8px 20px -8px rgba(10, 70, 91, 0.22), 0 1px 3px rgba(10, 70, 91, 0.06);
+  --am-overlay: rgba(12, 40, 33, 0.45);
+  --am-accent-bg: #edfbf5;
+  --am-switch-off: #b7c4bf;
+  --am-sk-a: #eef2f0;
+  --am-sk-b: #e3e9e6;
+
+  // Team avatar presets (TeamColors): background, then initials.
+  --am-team-mint-bg: #d4f5ea;
+  --am-team-mint-fg: #0c4a39;
+  --am-team-seafoam-bg: #a8ebd4;
+  --am-team-seafoam-fg: #0c4a39;
+  --am-team-mist-bg: #e6f1ef;
+  --am-team-mist-fg: #0e5772;
+  --am-team-sky-bg: #e7f0f4;
+  --am-team-sky-fg: #0e5772;
+  --am-team-green-bg: #1b9270;
+  --am-team-green-fg: #fffeff;
+  --am-team-ocean-bg: #0e5772;
+  --am-team-ocean-fg: #fffeff;
 
   --bs-box-shadow: var(--am-shadow);
   --bs-box-shadow-sm: var(--am-shadow-sm);
@@ -41,4 +60,22 @@
   --am-signin-bottom: #142a23;
   --am-shadow: 0 18px 44px -14px rgba(0, 0, 0, 0.65), 0 4px 10px -2px rgba(0, 0, 0, 0.35);
   --am-shadow-sm: 0 8px 20px -8px rgba(0, 0, 0, 0.55);
+  --am-overlay: rgba(3, 10, 8, 0.64);
+  --am-accent-bg: rgba(32, 168, 128, 0.14);
+  --am-switch-off: rgba(255, 255, 255, 0.28);
+  --am-sk-a: #1a3329;
+  --am-sk-b: #213d32;
+
+  --am-team-mint-bg: rgba(32, 168, 128, 0.26);
+  --am-team-mint-fg: #a8ebd4;
+  --am-team-seafoam-bg: rgba(109, 219, 181, 0.4);
+  --am-team-seafoam-fg: #e9fbf4;
+  --am-team-mist-bg: rgba(197, 217, 226, 0.16);
+  --am-team-mist-fg: #c5d9e2;
+  --am-team-sky-bg: rgba(197, 217, 226, 0.3);
+  --am-team-sky-fg: #f1f7fa;
+  --am-team-green-bg: #20a880;
+  --am-team-green-fg: #0f1f1a;
+  --am-team-ocean-bg: #3a8fb0;
+  --am-team-ocean-fg: #0f1f1a;
 }
