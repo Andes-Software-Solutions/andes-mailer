@@ -23,6 +23,7 @@ public sealed class RoleGrantConfiguration : IEntityTypeConfiguration<RoleGrant>
     private static readonly Permissions[] _teamAdministratorPermissions =
     [
         .. _teamMemberPermissions,
+        Permissions.ModifyTeam,
         Permissions.CreateTeamUser,
         Permissions.ModifyTeamUser,
         Permissions.DeactivateTeamUser,

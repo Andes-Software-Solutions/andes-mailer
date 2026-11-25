@@ -10,6 +10,7 @@ export const routePaths = {
   emailGroups: 'email-groups',
   teamMembers: 'team/members',
   teamSettings: 'team/settings',
+  teams: 'teams',
   profile: 'profile',
   help: 'help',
 } as const;

@@ -18,6 +18,7 @@ import {
   RouterOutlet,
 } from '@angular/router';
 import { HasPermission } from '@core/auth/has-permission';
+import { ToastStack } from '@core/feedback/toast-stack';
 import { SessionStore } from '@core/auth/session-store';
 import { ShellRouteData } from '@core/navigation/route-data.model';
 import { routePaths } from '@core/navigation/route-paths';
@@ -47,6 +48,7 @@ const SIDEBAR_QUERY = '(min-width: 768px)';
     SidebarContent,
     TeamSwitcher,
     ThemeToggle,
+    ToastStack,
     UserMenu,
   ],
   styleUrl: './shell.scss',

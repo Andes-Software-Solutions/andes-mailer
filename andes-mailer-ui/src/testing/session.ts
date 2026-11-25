@@ -22,6 +22,7 @@ export const teamMemberPermissions: readonly Permission[] = [
 ];
 
 export const teamAdministratorPermissions: readonly Permission[] = [
+  'ModifyTeam',
   'CreateTeamUser',
   'ModifyTeamUser',
   'DeactivateTeamUser',
@@ -56,6 +57,7 @@ export const allPermissions: readonly Permission[] = [
 export const hrTeam: CurrentUserTeam = {
   id: '6f9619ff-8b86-4011-b42d-00c04fc964ff',
   name: 'HR Announcements',
+  avatarColor: 'Sky',
   role: 'TeamMember',
   permissions: teamMemberPermissions,
 };
@@ -63,6 +65,7 @@ export const hrTeam: CurrentUserTeam = {
 export const communicationsTeam: CurrentUserTeam = {
   id: '0b1c2d3e-4f50-4617-8293-a4b5c6d7e8f9',
   name: 'Corporate Communications',
+  avatarColor: 'Mint',
   role: 'TeamAdministrator',
   permissions: teamAdministratorPermissions,
 };

@@ -1,3 +1,4 @@
+using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Entity.Base;
 
 namespace Andes.Mailer.Entity.Teams;
@@ -34,6 +35,26 @@ public sealed class Team : BaseModifiedEntity<Guid>
     /// Not a key of <c>[Core].[User]</c>: a service account sends mail but never signs in to the application.
     /// </remarks>
     public Guid ServiceAccountId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the colour of the team's avatar.
+    /// </summary>
+    public TeamColors AvatarColorId { get; set; } = TeamColors.Mint;
+
+    /// <summary>
+    /// Gets or sets the reference row of the avatar colour.
+    /// </summary>
+    public TeamColor? AvatarColor { get; set; }
+
+    /// <summary>
+    /// Gets or sets the sanitized HTML signature added to new emails, or <see langword="null"/> if there is none.
+    /// </summary>
+    public string? DefaultSignature { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of recipients above which sending asks for confirmation.
+    /// </summary>
+    public int ConfirmRecipientsAbove { get; set; } = 50;
 
     /// <summary>
     /// Gets or sets the members.

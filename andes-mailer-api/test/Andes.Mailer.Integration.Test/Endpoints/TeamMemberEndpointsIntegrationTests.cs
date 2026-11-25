@@ -156,6 +156,48 @@ public sealed class TeamMemberEndpointsIntegrationTests(SqlServerFixture fixture
         Assert.Equal(Roles.TeamMember, page.Items.Single(m => m.UserId == caller).Role);
     }
 
+    [Fact]
+    public async Task LeaveTeam_Member_RemovesOwnMembership()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, caller);
+
+        using var left = await client.DeleteAsync(new Uri($"{MembersPath(team)}/me", UriKind.Relative), TestContext.Current.CancellationToken);
+        using var after = await client.GetAsync(new Uri(MembersPath(team), UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NoContent, left.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, after.StatusCode);
+    }
+
+    [Fact]
+    public async Task LeaveTeam_LastAdministrator_ReturnsConflict()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedMemberAsync(_fixture, team, Roles.TeamAdministrator);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, caller);
+
+        using var response = await client.DeleteAsync(new Uri($"{MembersPath(team)}/me", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task LeaveTeam_AdministratorOutsideTeam_ReturnsNotFound()
+    {
+        var team = await TestCallers.SeedTeamAsync(_fixture);
+        var caller = await TestCallers.SeedAsync(_fixture, Roles.Administrator);
+        await using var factory = CreateFactory();
+        using var client = TestCallers.CreateClient(factory, caller);
+
+        using var response = await client.DeleteAsync(new Uri($"{MembersPath(team)}/me", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     #region Private methods
 
     private static string MembersPath(Guid teamId) => $"/api/teams/{teamId}/members";

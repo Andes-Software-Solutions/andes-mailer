@@ -1,0 +1,56 @@
+<input
+  type="email"
+  class="form-control"
+  role="combobox"
+  autocomplete="off"
+  aria-autocomplete="list"
+  [id]="inputId()"
+  [attr.aria-expanded]="expanded()"
+  [attr.aria-controls]="listId"
+  [attr.aria-activedescendant]="activeId()"
+  [attr.aria-describedby]="describedBy() || null"
+  [attr.aria-invalid]="showInvalid() || null"
+  [class.is-invalid]="showInvalid()"
+  [placeholder]="placeholder()"
+  [value]="value()"
+  [disabled]="disabled()"
+  [readOnly]="readonly()"
+  (input)="onInput($event)"
+  (keydown)="onKeydown($event)"
+  (blur)="onBlur()"
+/>
+
+<ul class="dropdown-menu suggestions" role="listbox" [id]="listId" [class.show]="expanded()">
+  @switch (state().status) {
+    @case ('loading') {
+      <li class="dropdown-item-text text-body-secondary small" role="presentation">
+        <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+        Searching the directory…
+      </li>
+    }
+    @case ('error') {
+      <li class="dropdown-item-text text-danger small" role="presentation">{{ errorMessage() }}</li>
+    }
+    @case ('done') {
+      @for (suggestion of suggestions(); track suggestion.email; let index = $index) {
+        <li
+          class="dropdown-item"
+          role="option"
+          [id]="listId + '-' + index"
+          [attr.data-index]="index"
+          [attr.aria-selected]="index === active()"
+          [class.active]="index === active()"
+        >
+          <span class="d-block fw-semibold text-truncate">{{ suggestion.label }}</span>
+          <span class="d-block small text-body-secondary text-truncate">{{
+            suggestion.email
+          }}</span>
+        </li>
+      } @empty {
+        <li class="dropdown-item-text text-body-secondary small" role="presentation">
+          No matching accounts. You can still type the full address.
+        </li>
+      }
+    }
+  }
+</ul>

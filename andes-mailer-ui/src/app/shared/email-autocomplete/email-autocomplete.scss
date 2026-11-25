@@ -1,0 +1,22 @@
+:host {
+  position: relative;
+  display: block;
+}
+
+.suggestions {
+  width: 100%;
+  max-height: 16rem;
+  overflow-y: auto;
+  margin-top: 0.25rem;
+
+  .dropdown-item {
+    display: block;
+    cursor: pointer;
+  }
+
+  // The keyboard's place in the list, shown like a hover rather than Bootstrap's solid active fill.
+  .dropdown-item.active {
+    background-color: var(--am-accent-bg);
+    color: var(--bs-body-color);
+  }
+}

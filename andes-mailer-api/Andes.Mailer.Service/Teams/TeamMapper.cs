@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 
+using Andes.Mailer.Common.Enums;
 using Andes.Mailer.Dto.Teams;
 using Andes.Mailer.Entity.Teams;
 using Andes.Mailer.Entity.Users;
@@ -14,11 +15,19 @@ public static class TeamMapper
     /// <summary>
     /// Gets the projection that maps a team to a <see cref="TeamDto"/> inside a query.
     /// </summary>
+    /// <remarks>
+    /// The member counts read the <see cref="Team.Members"/> navigation, so the membership query filters drop removed members and deactivated users.
+    /// </remarks>
     public static Expression<Func<Team, TeamDto>> MapToTeamDtoExpression { get; } = team => new TeamDto(
         team.Id,
         team.Name,
         team.Description,
         team.ServiceAccountEmail,
+        team.AvatarColorId,
+        team.DefaultSignature,
+        team.ConfirmRecipientsAbove,
+        team.Members.Count,
+        team.Members.Count(m => m.RoleId == Roles.TeamAdministrator),
         team.DateCreated,
         team.DateModified,
         Convert.ToBase64String(team.Version));
@@ -43,11 +52,11 @@ public static class TeamMapper
     #region Public static methods
 
     /// <summary>
-    /// Maps a loaded team to a <see cref="TeamDto"/>.
+    /// Maps a team that has no members yet, such as one just created, to a <see cref="TeamDto"/>.
     /// </summary>
     /// <param name="team">The team.</param>
-    /// <returns>The DTO.</returns>
-    public static TeamDto MapToTeamDto(Team team)
+    /// <returns>The DTO, with both member counts at zero.</returns>
+    public static TeamDto MapToNewTeamDto(Team team)
     {
         ArgumentNullException.ThrowIfNull(team);
 
@@ -56,6 +65,11 @@ public static class TeamMapper
             team.Name,
             team.Description,
             team.ServiceAccountEmail,
+            team.AvatarColorId,
+            team.DefaultSignature,
+            team.ConfirmRecipientsAbove,
+            0,
+            0,
             team.DateCreated,
             team.DateModified,
             Convert.ToBase64String(team.Version));

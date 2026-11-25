@@ -1,0 +1,44 @@
+.d-contents {
+  display: contents;
+}
+
+.results {
+  min-height: 9rem;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.min-w-0 {
+  min-width: 0;
+}
+
+.chip-failed {
+  border-color: var(--bs-danger-border-subtle);
+  background-color: var(--bs-danger-bg-subtle);
+}
+
+.sk-avatar {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+}
+
+.sk-line {
+  width: 50%;
+  height: 0.75rem;
+}
+
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+@media (max-width: 767.98px) {
+  .results {
+    max-height: none;
+    flex: 1 1 auto;
+  }
+}

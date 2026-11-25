@@ -1,4 +1,5 @@
 using Andes.Mailer.Api.ExceptionHandlers;
+using Andes.Mailer.Api.Filters.Exceptions;
 using Andes.Mailer.Api.Problems.Constants;
 using Andes.Mailer.Service.Exceptions;
 
@@ -56,6 +57,40 @@ public sealed class GlobalExceptionHandlerTests
         await _handler.TryHandleAsync(new DefaultHttpContext(), exception, TestContext.Current.CancellationToken);
 
         await _problemDetails.Received(1).TryWriteAsync(Arg.Is<ProblemDetailsContext>(c => c.ProblemDetails.Detail == Message));
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_IdempotencyKeyMismatch_WritesUnprocessableContent()
+    {
+        var context = new DefaultHttpContext();
+
+        await _handler.TryHandleAsync(context, new IdempotencyKeyMismatchException(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, context.Response.StatusCode);
+        await _problemDetails.Received(1).TryWriteAsync(Arg.Is<ProblemDetailsContext>(c =>
+            c.ProblemDetails.Status == StatusCodes.Status422UnprocessableEntity && c.ProblemDetails.Type == ProblemTypes.UnprocessableContent));
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_IdempotencyRequestInProgress_WritesConflictWithRetryAfter()
+    {
+        var context = new DefaultHttpContext();
+
+        await _handler.TryHandleAsync(context, new IdempotencyRequestInProgressException(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(StatusCodes.Status409Conflict, context.Response.StatusCode);
+        Assert.Equal("1", context.Response.Headers.RetryAfter);
+        await _problemDetails.Received(1).TryWriteAsync(Arg.Is<ProblemDetailsContext>(c => c.ProblemDetails.Type == ProblemTypes.Conflict));
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_PlainConflict_SetsNoRetryAfter()
+    {
+        var context = new DefaultHttpContext();
+
+        await _handler.TryHandleAsync(context, new ConflictException(Message), TestContext.Current.CancellationToken);
+
+        Assert.False(context.Response.Headers.ContainsKey("Retry-After"));
     }
 
     [Fact]

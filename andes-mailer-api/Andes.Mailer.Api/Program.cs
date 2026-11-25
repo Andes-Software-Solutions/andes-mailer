@@ -19,6 +19,7 @@ builder.Services.AddAndesMailerBlobPersistence(builder.Configuration);
 builder.Services.AddAndesMailerHealth();
 builder.Services.AddAndesMailerAuthentication(builder.Configuration);
 builder.Services.AddAndesMailerRateLimiting(builder.Configuration);
+builder.Services.AddAndesMailerIdempotency(builder.Configuration);
 builder.Services.AddUsers();
 builder.Services.AddTeams();
 builder.Services.AddContactGroups();

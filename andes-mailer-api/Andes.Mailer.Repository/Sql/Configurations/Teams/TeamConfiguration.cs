@@ -18,10 +18,20 @@ public sealed class TeamConfiguration : BaseModifiedEntityConfiguration<Team, Gu
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.ToTable("Team", SqlSchemas.Core);
+        builder.ToTable(
+            "Team",
+            SqlSchemas.Core,
+            t => t.HasCheckConstraint(
+                "CK_Team_ConfirmRecipientsAbove",
+                $"[ConfirmRecipientsAbove] BETWEEN {TeamLimits.ConfirmRecipientsAboveMin} AND {TeamLimits.ConfirmRecipientsAboveMax}"));
         builder.Property(t => t.Name).HasMaxLength(TeamLimits.NameMaxLength).IsRequired();
         builder.Property(t => t.Description).HasMaxLength(TeamLimits.DescriptionMaxLength);
         builder.Property(t => t.ServiceAccountEmail).HasMaxLength(TeamLimits.ServiceAccountEmailMaxLength).IsRequired();
+
+        builder.HasOne(t => t.AvatarColor)
+            .WithMany()
+            .HasForeignKey(t => t.AvatarColorId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Active rows only, so a deactivated team never blocks its name or mailbox from being used again.
         builder.HasIndex(t => t.Name).IsUnique().HasFilter("[DateDeactivated] IS NULL");

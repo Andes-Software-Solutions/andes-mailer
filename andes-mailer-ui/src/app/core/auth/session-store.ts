@@ -104,15 +104,21 @@ export const SessionStore = signalStore(
     const appUrl = (path: string): string =>
       new URL(store._location.prepareExternalUrl(path), store._document.baseURI).href;
 
+    async function fetchUser(): Promise<CurrentUser> {
+      const user = await firstValueFrom(store._http.get<unknown>(ME_URL));
+
+      if (!isCurrentUser(user)) {
+        throw new TypeError(`${ME_URL} returned an unexpected shape.`);
+      }
+
+      return user;
+    }
+
     async function load(): Promise<void> {
       patchState(store, { status: 'loading' });
 
       try {
-        const user = await firstValueFrom(store._http.get<unknown>(ME_URL));
-
-        if (!isCurrentUser(user)) {
-          throw new TypeError(`${ME_URL} returned an unexpected shape.`);
-        }
+        const user = await fetchUser();
 
         patchState(store, loaded(user, readStoredTeam(storage(), user.id)));
       } catch (cause) {
@@ -135,6 +141,21 @@ export const SessionStore = signalStore(
         return inFlight;
       },
 
+      /**
+       * Reads the account again after a change to the user's teams, such as creating, renaming, or
+       * leaving one, without the sign-in splash. Keeps the active team while it still exists;
+       * otherwise the first team becomes active. A failure keeps what the store holds.
+       */
+      async refresh(): Promise<void> {
+        try {
+          const user = await fetchUser();
+
+          patchState(store, { user, status: 'loaded' });
+        } catch (cause) {
+          console.error(cause);
+        }
+      },
+
       /** Reactive: reads the permission signal, so templates and computeds follow team switches. */
       can(required: Permission | readonly Permission[], mode: PermissionMode = 'any'): boolean {
         const held = store.permissions();
@@ -154,15 +175,18 @@ export const SessionStore = signalStore(
         patchState(store, { retryUrl: url });
       },
 
-      selectTeam(teamId: string): void {
+      /** Returns `false`, changing nothing, for a team the account does not list. */
+      selectTeam(teamId: string): boolean {
         const user = store.user();
 
         if (!user || !store.teams().some((team) => team.id === teamId)) {
-          return;
+          return false;
         }
 
         patchState(store, { activeTeamId: teamId });
         writeStoredTeam(storage(), user.id, teamId);
+
+        return true;
       },
 
       /** Rejects when MSAL cannot start the redirect, for example while another one is pending. */

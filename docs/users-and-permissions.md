@@ -44,7 +44,7 @@ Queries on `User` and `UserRole` hide deactivated rows by default (the `Deactiva
 | Role | Id | Scope | Permissions |
 | --- | --- | --- | --- |
 | `Administrator` | 1 | Global | All fifteen. In a team, this includes its emails, templates, and contact groups. |
-| `TeamAdministrator` | 2 | One team | `CreateTeamUser`, `ModifyTeamUser`, `DeactivateTeamUser`, `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails`, `ManageTeamTemplates`, `DuplicateTeamEmails`, `ManageTeamContactGroups` |
+| `TeamAdministrator` | 2 | One team | `ModifyTeam`, `CreateTeamUser`, `ModifyTeamUser`, `DeactivateTeamUser`, `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails`, `ManageTeamTemplates`, `DuplicateTeamEmails`, `ManageTeamContactGroups` |
 | `TeamMember` | 3 | One team | `CanAttachDocuments`, `ViewTeam`, `ComposeTeamEmails`, `DuplicateTeamEmails` |
 
 | Permission | Id | Checked by |
@@ -57,19 +57,19 @@ Queries on `User` and `UserRole` hide deactivated rows by default (the `Deactiva
 | `DeactivateTeamUser` | 6 | `DELETE /api/teams/{teamId}/members/{userId}`: removing a member |
 | `CanAttachDocuments` | 7 | `POST` and `DELETE` on `/api/teams/{teamId}/emails/{emailId}/attachments` and on `/api/teams/{teamId}/templates/{templateId}/attachments`: uploading a document to a draft or a template and removing one |
 | `CreateTeam` | 8 | `POST /api/teams` |
-| `ModifyTeam` | 9 | `PUT /api/teams/{teamId}` |
+| `ModifyTeam` | 9 | `PUT /api/teams/{teamId}`: editing a team's details and settings. Changing the service mailbox also needs a global role that holds it |
 | `DeactivateTeam` | 10 | `DELETE /api/teams/{teamId}` |
-| `ViewTeam` | 11 | `GET /api/teams/{teamId}` and `GET` on `/api/teams/{teamId}/members` |
+| `ViewTeam` | 11 | `GET /api/teams/{teamId}`, `GET` on `/api/teams/{teamId}/members`, and `DELETE /api/teams/{teamId}/members/me`: leaving a team |
 | `ComposeTeamEmails` | 12 | Every route under `/api/teams/{teamId}/emails`, including attachment reads and `POST .../emails/from-template`; and every route under `/api/teams/{teamId}/templates`, so every team member can read and use templates |
 | `ManageTeamTemplates` | 13 | `POST`, `PUT`, and `DELETE` on `/api/teams/{teamId}/templates`, and `POST` and `DELETE` on `/api/teams/{teamId}/templates/{templateId}/attachments`: creating, changing, and deactivating a template and its documents. Each also needs `ComposeTeamEmails`, and the attachment routes `CanAttachDocuments` |
 | `DuplicateTeamEmails` | 14 | `POST /api/teams/{teamId}/emails/{id}/duplicate` and `POST /api/teams/{teamId}/templates/{id}/duplicate`: copying an email into a new draft and a template into a new template. Both also need `ComposeTeamEmails`, and the template route `ManageTeamTemplates`, so a `TeamMember` can duplicate an email but not a template |
 | `ManageTeamContactGroups` | 15 | `POST`, `PUT`, and `DELETE` on `/api/teams/{teamId}/contact-groups`: creating, replacing, and deactivating a team's contact groups. Each also needs `ComposeTeamEmails`, which alone lets a member list and read groups |
 
-Team creation, editing, and deactivation (8 to 10) are held by `Administrator` only, so a team administrator can manage who is in their team but not the team itself. `ManageTeamTemplates` (13) is held by `Administrator` and `TeamAdministrator`: a `TeamMember` can read and use a team's templates but not change them, and gets a 403 on the write routes. `DuplicateTeamEmails` (14) is held by all three roles, but duplicating a template also needs `ManageTeamTemplates`, so only `Administrator` and `TeamAdministrator` can do it. `ManageTeamContactGroups` (15) is held by `Administrator` and `TeamAdministrator`: a `TeamMember` can list and read a team's contact groups but not change them, and gets a 403 on the write routes. `GET /api/teams` needs no permission; it lists the teams the caller belongs to, or every team for an `Administrator`.
+Team creation and deactivation (8 and 10) are held by `Administrator` only. `ModifyTeam` (9) is held by `Administrator` and `TeamAdministrator`, so a team administrator manages who is in their team and edits its details and [settings](teams.md#team-settings). Changing the team's service mailbox still needs the global role, because it decides who the mail comes from: `TeamService` answers 403 to a team administrator who tries. `ManageTeamTemplates` (13) is held by `Administrator` and `TeamAdministrator`: a `TeamMember` can read and use a team's templates but not change them, and gets a 403 on the write routes. `DuplicateTeamEmails` (14) is held by all three roles, but duplicating a template also needs `ManageTeamTemplates`, so only `Administrator` and `TeamAdministrator` can do it. `ManageTeamContactGroups` (15) is held by `Administrator` and `TeamAdministrator`: a `TeamMember` can list and read a team's contact groups but not change them, and gets a 403 on the write routes. `GET /api/teams` needs no permission; it lists the teams the caller belongs to, or every team for an `Administrator`.
 
 The permissions that guard team routes are checked **in the team**: a `TeamMember` in Team A holds nothing in Team B. A user with no role and no team, such as one you just added or reactivated, can do nothing beyond the read endpoints of `/api/users` until someone adds them to a team. See [Teams](teams.md#how-team-access-is-checked) and [Emails and attachments](emails-and-attachments.md#attachments).
 
-The enums are `Roles` and `Permissions` in `Andes.Mailer.Common/Enums/`, and `RoleScopes` in `Andes.Mailer.Common/Constants/Users/` lists which roles are global and which are team roles. The reference rows belong to the code, not to operators: they are seeded with `HasData`, so a change to a role's permissions ships as a new migration. The team grants arrive in the migration `*_AddTeams.cs`, `ManageTeamTemplates` and its grants in `*_AddEmailTemplates.cs`, `DuplicateTeamEmails` and its grants in `*_AddDuplicateTeamEmailsPermission.cs`, and `ManageTeamContactGroups` and its grants in `*_AddContactGroups.cs`.
+The enums are `Roles` and `Permissions` in `Andes.Mailer.Common/Enums/`, and `RoleScopes` in `Andes.Mailer.Common/Constants/Users/` lists which roles are global and which are team roles. The reference rows belong to the code, not to operators: they are seeded with `HasData`, so a change to a role's permissions ships as a new migration. The team grants arrive in the migration `*_AddTeams.cs` (`ModifyTeam` for `TeamAdministrator` in `*_AddTeamSettings.cs`), `ManageTeamTemplates` and its grants in `*_AddEmailTemplates.cs`, `DuplicateTeamEmails` and its grants in `*_AddDuplicateTeamEmailsPermission.cs`, and `ManageTeamContactGroups` and its grants in `*_AddContactGroups.cs`.
 
 ### Seed data
 
@@ -110,6 +110,7 @@ The UI needs to know who is signed in and what that person may do before it draw
     {
       "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
       "name": "HR Announcements",
+      "avatarColor": "Mint",
       "role": "TeamAdministrator",
       "permissions": ["CreateTeamUser", "ModifyTeamUser", "ComposeTeamEmails", "SendTeamEmails"]
     }
@@ -128,7 +129,7 @@ The UI needs to know who is signed in and what that person may do before it draw
 | `permissions` | What the global roles grant, ordered by value. Empty for anyone without a global role. |
 | `teams` | The teams the caller can see, ordered by name; see below. |
 
-Each team has `id`, `name`, `role`, and `permissions`.
+Each team has `id`, `name`, `avatarColor`, `role`, and `permissions`. `avatarColor` is one of the [team colours](teams.md#team-settings), so the UI can draw the team's avatar without a second call.
 
 - **Which teams.** The same rule as `GET /api/teams`: every active team for a caller whose global roles grant `ViewTeam` (an `Administrator`), otherwise the teams the caller belongs to. A deactivated team never appears.
 - **`role`.** The caller's role in that team, or `null` when a global role alone shows them the team.
@@ -379,13 +380,14 @@ The sidebar and the routes both read `navItems` (`core/navigation/nav-items.ts`)
 | --- | --- | --- |
 | Compose, Drafts, Scheduled, Sent, Templates, Email groups, and the **New email** button | `ComposeTeamEmails` | The permission that guards the team's emails, templates, and contact-group reads |
 | Team members | `ModifyTeamUser` | Held by `Administrator` and `TeamAdministrator`, so only they see the members page |
-| Team settings | `ModifyTeamUser` | **An assumption.** The settings feature has no permission of its own yet; replace it when it does. |
+| Team settings | `ModifyTeam` | Held by `Administrator` and `TeamAdministrator`, so team administrators edit their own team's settings |
+| Teams | `CreateTeam` | Held by `Administrator` only, so only a global administrator sees the list of every team |
 
 Profile and Help need no permission. Pages that are not built yet are placeholder routes (`features/coming-soon`) with the same guard, so a person without the permission reaches the home page instead of a "Coming soon" screen.
 
 ### Switching teams
 
-The team switcher in the sidebar (and a compact chip in the tablet top bar) calls `selectTeam`. Because the permission set is a signal, the navigation, the **New email** button, and every `*appHasPermission` update at once. A shell route also declares the permissions its guard needs in `data.permissions`; when a team switch means the open page is no longer permitted, the shell navigates home, as the guard would have on a fresh visit.
+The team switcher in the sidebar (and a compact chip in the tablet top bar) calls `selectTeam`. Because the permission set is a signal, the navigation, the **New email** button, and every `*appHasPermission` update at once. A shell route also declares the permissions its guard needs in `data.permissions`; when a team switch means the open page is no longer permitted, the shell navigates home, as the guard would have on a fresh visit. Before it switches, the switcher asks whether to discard unsaved edits on the open page (see [Team settings](teams.md#the-ui)).
 
 ### Add a guarded page or menu entry
 

@@ -11,10 +11,7 @@ export interface NavItem {
   readonly section: 'main' | 'admin';
 }
 
-/**
- * The sidebar, and the permissions its routes require. Team settings borrows the team-member
- * permission until the settings feature defines its own.
- */
+/** The sidebar, and the permissions its routes require. */
 export const navItems: readonly NavItem[] = [
   {
     label: 'Compose',
@@ -69,7 +66,15 @@ export const navItems: readonly NavItem[] = [
     label: 'Team settings',
     icon: 'gear',
     path: routePaths.teamSettings,
-    permissions: ['ModifyTeamUser'],
+    permissions: ['ModifyTeam'],
+    section: 'admin',
+  },
+  {
+    // CreateTeam comes from the global Administrator role only, never from a team role.
+    label: 'Teams',
+    icon: 'diagram-3',
+    path: routePaths.teams,
+    permissions: ['CreateTeam'],
     section: 'admin',
   },
 ];

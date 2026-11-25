@@ -19,6 +19,7 @@ internal static class OpenApiConfiguration
         {
             options.AddDocumentTransformer<EntraSecuritySchemeDocumentTransformer>();
             options.AddOperationTransformer<AuthorizationOperationTransformer>();
+            options.AddOperationTransformer<IdempotencyOperationTransformer>();
         });
 
         return services;

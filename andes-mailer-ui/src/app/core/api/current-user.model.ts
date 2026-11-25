@@ -1,9 +1,11 @@
 import { Permission, Role } from './permission.model';
+import { TeamColor } from './team.model';
 
 /** A team the signed-in user can see, and what they may do in it. */
 export interface CurrentUserTeam {
   readonly id: string;
   readonly name: string;
+  readonly avatarColor: TeamColor;
   /** Their role in the team, or `null` when a global role alone lets them see it. */
   readonly role: Role | null;
   /** Their team role's grants together with their global ones. */

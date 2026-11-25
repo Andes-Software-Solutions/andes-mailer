@@ -1,0 +1,42 @@
+:host {
+  display: block;
+}
+
+.rte {
+  overflow: hidden;
+  border: 1px solid var(--am-border-field);
+  border-radius: var(--bs-border-radius-lg);
+  background-color: var(--am-surface);
+
+  &:focus-within {
+    border-color: var(--am-teal);
+  }
+}
+
+:host(.is-disabled) .rte {
+  background-color: var(--am-field);
+}
+
+.rte-toolbar {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--bs-border-color);
+
+  .btn[aria-pressed='true'] {
+    --bs-btn-bg: var(--am-accent-bg-2);
+  }
+}
+
+.rte-link {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--bs-border-color);
+
+  .form-control {
+    flex: 1 1 12rem;
+  }
+}

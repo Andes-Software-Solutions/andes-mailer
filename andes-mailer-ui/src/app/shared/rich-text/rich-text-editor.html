@@ -1,0 +1,73 @@
+<div class="rte">
+  <div class="rte-toolbar" role="toolbar" [attr.aria-label]="label() + ' formatting'">
+    <button
+      type="button"
+      class="btn btn-ghost btn-icon btn-sm"
+      aria-label="Bold"
+      [attr.aria-pressed]="active().bold"
+      [disabled]="disabled() || readonly()"
+      (click)="toggleBold()"
+    >
+      <i class="bi bi-type-bold" aria-hidden="true"></i>
+    </button>
+    <button
+      type="button"
+      class="btn btn-ghost btn-icon btn-sm"
+      aria-label="Italic"
+      [attr.aria-pressed]="active().italic"
+      [disabled]="disabled() || readonly()"
+      (click)="toggleItalic()"
+    >
+      <i class="bi bi-type-italic" aria-hidden="true"></i>
+    </button>
+    <button
+      type="button"
+      class="btn btn-ghost btn-icon btn-sm"
+      aria-label="Insert link"
+      [attr.aria-pressed]="active().link"
+      [attr.aria-expanded]="linkOpen()"
+      [disabled]="disabled() || readonly()"
+      (click)="openLink()"
+    >
+      <i class="bi bi-link-45deg" aria-hidden="true"></i>
+    </button>
+  </div>
+
+  @if (linkOpen()) {
+    <div class="rte-link">
+      <label class="visually-hidden" [for]="linkFieldId">Link address</label>
+      <input
+        #linkInput
+        type="url"
+        class="form-control form-control-sm"
+        placeholder="https://"
+        [id]="linkFieldId"
+        [value]="linkUrl()"
+        (input)="onLinkInput($event)"
+        (keydown.enter)="$event.preventDefault(); applyLink()"
+        (keydown.escape)="$event.stopPropagation(); cancelLink()"
+      />
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        [disabled]="disabled() || readonly()"
+        (click)="applyLink()"
+      >
+        Apply
+      </button>
+      @if (active().link) {
+        <button
+          type="button"
+          class="btn btn-outline btn-sm"
+          [disabled]="disabled() || readonly()"
+          (click)="removeLink()"
+        >
+          Remove
+        </button>
+      }
+      <button type="button" class="btn btn-ghost btn-sm" (click)="cancelLink()">Cancel</button>
+    </div>
+  }
+
+  <div #surface class="rte-surface"></div>
+</div>

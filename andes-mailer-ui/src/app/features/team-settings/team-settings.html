@@ -1,0 +1,257 @@
+<div class="page-head">
+  <div class="ph-title">
+    <h1 class="mb-1">Team settings</h1>
+    <p class="mb-0 text-body-secondary">{{ store.team()?.name ?? '' }}</p>
+  </div>
+</div>
+
+@if (store.status() === 'loading') {
+  <div
+    class="card card-body d-flex flex-column gap-3"
+    aria-busy="true"
+    aria-label="Loading settings"
+  >
+    <span class="sk sk-line"></span>
+    <span class="sk sk-field"></span>
+    <span class="sk sk-line"></span>
+    <span class="sk sk-field"></span>
+  </div>
+} @else if (store.status() === 'error') {
+  <div class="alert alert-danger" role="alert">
+    <i class="bi bi-exclamation-octagon" aria-hidden="true"></i>
+    <div class="flex-grow-1">{{ store.loadError() }}</div>
+    <button type="button" class="btn btn-outline btn-sm" (click)="store.reload()">Try again</button>
+  </div>
+} @else if (store.team()) {
+  @if (!store.canEdit()) {
+    <div class="alert alert-info mb-0" role="note">
+      <i class="bi bi-info-circle" aria-hidden="true"></i>
+      <span>Only an administrator of this team can change its settings.</span>
+    </div>
+  }
+
+  @if (conflict()) {
+    <div class="alert alert-warning mb-0" role="alert">
+      <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+      <div class="flex-grow-1">
+        Someone else changed these settings while you were editing. Reload to see their version;
+        your unsaved changes here will be lost.
+      </div>
+      <button type="button" class="btn btn-outline btn-sm" (click)="reloadAfterConflict()">
+        Reload settings
+      </button>
+    </div>
+  }
+
+  <form class="d-flex flex-column gap-4" novalidate (submit)="save($event)">
+    <section class="card" aria-labelledby="general-title">
+      <div class="card-header bg-transparent">
+        <h2 class="h-section mb-0" id="general-title">General</h2>
+      </div>
+      <div class="card-body d-flex flex-column gap-3">
+        <div>
+          <label class="form-label" for="team-name">Team name</label>
+          <input
+            id="team-name"
+            class="form-control"
+            [class.is-invalid]="form.name().touched() && form.name().invalid()"
+            aria-describedby="team-name-error"
+            [formField]="form.name"
+          />
+          @if (form.name().touched() && form.name().errors()[0]; as error) {
+            <div id="team-name-error" class="invalid-feedback d-block">{{ error.message }}</div>
+          }
+        </div>
+
+        <fieldset>
+          <legend class="form-label">Team avatar colour</legend>
+          <div class="d-flex flex-wrap gap-2" role="group" aria-label="Team avatar colour">
+            @for (color of colors; track color) {
+              <button
+                type="button"
+                class="swatch"
+                [attr.aria-pressed]="model().avatarColor === color"
+                [attr.aria-label]="colorLabels[color]"
+                [disabled]="!store.canEdit() || store.saving()"
+                (click)="setColor(color)"
+              >
+                <app-team-avatar [name]="model().name || 'Team'" [color]="color" />
+              </button>
+            }
+          </div>
+        </fieldset>
+
+        <div>
+          <label class="form-label" for="team-description">Description</label>
+          <textarea
+            id="team-description"
+            class="form-control"
+            rows="3"
+            aria-describedby="team-description-hint team-description-error"
+            [class.is-invalid]="form.description().invalid()"
+            [formField]="form.description"
+          ></textarea>
+          <div id="team-description-hint" class="form-text">
+            Shown in the team switcher and to people you add.
+          </div>
+          @if (form.description().errors()[0]; as error) {
+            <div id="team-description-error" class="invalid-feedback d-block">
+              {{ error.message }}
+            </div>
+          }
+        </div>
+
+        <div>
+          <label class="form-label" for="team-mailbox">Sends from</label>
+          <app-email-autocomplete
+            inputId="team-mailbox"
+            placeholder="Search or type the mailbox address"
+            describedBy="team-mailbox-hint team-mailbox-error"
+            [suggest]="suggestMailbox"
+            [formField]="form.serviceAccountEmail"
+          />
+          <div id="team-mailbox-hint" class="form-text">
+            @if (store.canEditMailbox()) {
+              The directory mailbox every email from this team is sent from.
+            } @else {
+              The directory mailbox every email from this team is sent from. Only an Andes Mailer
+              administrator can change it.
+            }
+          </div>
+          @if (
+            form.serviceAccountEmail().touched() && form.serviceAccountEmail().errors()[0];
+            as error
+          ) {
+            <div id="team-mailbox-error" class="invalid-feedback d-block">{{ error.message }}</div>
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="sending-title">
+      <div class="card-header bg-transparent">
+        <h2 class="h-section mb-0" id="sending-title">Sending defaults</h2>
+      </div>
+      <div class="card-body d-flex flex-column gap-3">
+        <p class="mb-0 replies-note">
+          <i class="bi bi-reply" aria-hidden="true"></i>
+          <span>
+            Replies go to <strong>{{ store.team()?.serviceAccountEmail }}</strong
+            >, the mailbox the team sends from. Who reads them is set on that mailbox in Exchange.
+          </span>
+        </p>
+
+        <div>
+          <span class="form-label d-block" id="signature-label">Default signature</span>
+          <app-rich-text-editor
+            label="Default signature"
+            describedBy="signature-hint signature-error"
+            [formField]="form.defaultSignature"
+          />
+          <div id="signature-hint" class="form-text">
+            Added to new emails. People can edit it before sending.
+          </div>
+          @if (form.defaultSignature().errors()[0]; as error) {
+            <div id="signature-error" class="invalid-feedback d-block">{{ error.message }}</div>
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="safety-title">
+      <div class="card-header bg-transparent">
+        <h2 class="h-section mb-0" id="safety-title">Safety rules</h2>
+      </div>
+      <div class="card-body d-flex flex-column gap-3">
+        <div>
+          <label class="d-flex flex-wrap align-items-center gap-2" for="confirm-above">
+            Ask for confirmation when sending to more than
+            <input
+              id="confirm-above"
+              type="number"
+              class="form-control threshold"
+              aria-describedby="confirm-above-error"
+              [class.is-invalid]="form.confirmRecipientsAbove().invalid()"
+              [formField]="form.confirmRecipientsAbove"
+            />
+            recipients
+          </label>
+          @if (form.confirmRecipientsAbove().errors()[0]; as error) {
+            <div id="confirm-above-error" class="invalid-feedback d-block">{{ error.message }}</div>
+          }
+        </div>
+      </div>
+    </section>
+
+    @if (store.isMember()) {
+      <section class="card danger-zone" aria-labelledby="danger-title">
+        <div class="card-header bg-transparent">
+          <h2 class="h-section mb-0" id="danger-title">Danger zone</h2>
+        </div>
+        <div class="card-body d-flex flex-wrap align-items-center gap-3">
+          <div class="flex-grow-1">
+            <p class="fw-semibold mb-1">Leave team</p>
+            <p class="mb-0 small text-body-secondary" id="leave-hint">
+              @if (store.isOnlyAdministrator()) {
+                You're the only administrator. Make someone else an administrator first.
+              } @else {
+                You'll lose access to {{ store.team()?.name }} drafts, sent history and sending. An
+                administrator can add you back.
+              }
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline btn-leave"
+            aria-describedby="leave-hint"
+            [disabled]="store.isOnlyAdministrator() || store.leaving()"
+            (click)="askLeave()"
+          >
+            Leave team
+          </button>
+        </div>
+      </section>
+    }
+
+    @if (dirty()) {
+      <div class="unsaved-bar" role="region" aria-label="Unsaved changes">
+        <span class="unsaved-msg">You have unsaved changes</span>
+        <button
+          type="button"
+          class="btn btn-outline"
+          [disabled]="store.saving()"
+          (click)="discard()"
+        >
+          Discard
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [disabled]="store.saving() || conflict()"
+          [attr.aria-busy]="store.saving() || null"
+        >
+          @if (store.saving()) {
+            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+          }
+          Save changes
+        </button>
+      </div>
+    }
+  </form>
+}
+
+@if (confirmingLeave()) {
+  <app-confirm-dialog
+    tone="danger"
+    [heading]="'Leave ' + (store.team()?.name ?? 'this team') + '?'"
+    confirmLabel="Leave team"
+    [busy]="store.leaving()"
+    (confirmed)="leave()"
+    (cancelled)="cancelLeave()"
+  >
+    <p class="mb-0">
+      You'll lose access to this team's drafts, sent history and sending. An administrator can add
+      you back.
+    </p>
+  </app-confirm-dialog>
+}

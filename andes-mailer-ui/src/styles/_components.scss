@@ -32,6 +32,12 @@ h1,
   color: var(--bs-body-color);
 }
 
+// Reboot sizes a <legend> like a heading; as a field label it matches the other labels.
+legend.form-label {
+  float: none;
+  font-size: var(--bs-body-font-size);
+}
+
 // Uppercase section label: menus, sidebar groups, table headers.
 .t-micro {
   font-size: 0.75rem;
@@ -217,5 +223,537 @@ h1,
   &.avatar-lg {
     width: 2.5rem;
     height: 2.5rem;
+  }
+}
+
+// Team avatar colours, one class per TeamColors preset.
+@each $color in 'mint', 'seafoam', 'mist', 'sky', 'green', 'ocean' {
+  .avatar-team.team-color-#{$color} {
+    background-color: var(--am-team-#{$color}-bg);
+    color: var(--am-team-#{$color}-fg);
+  }
+}
+
+// The signed-in person's own avatar, set apart from colleagues.
+.avatar.avatar-me {
+  background-color: var(--bs-primary);
+  color: #ffffff;
+}
+
+.avatar.avatar-person {
+  background-color: var(--am-accent-bg-2);
+  color: var(--bs-primary-text-emphasis);
+}
+
+.avatar-sm {
+  width: 1.25rem;
+  height: 1.25rem;
+  font-size: 0.5625rem;
+}
+
+// Page title row: heading and subtitle on the left, the page action on the right.
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+
+  .ph-title {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+.h-section {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.75rem;
+}
+
+// A search field with its icon inside.
+.input-icon {
+  position: relative;
+  display: block;
+
+  > .bi {
+    position: absolute;
+    top: 50%;
+    left: 0.75rem;
+    color: var(--am-icon);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  > .form-control {
+    padding-left: 2.375rem;
+  }
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+// Segmented control: one choice out of a few, as pressed buttons.
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.625rem;
+  background-color: var(--am-field);
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 2rem;
+    padding: 0 0.875rem;
+    border: 0;
+    border-radius: 0.4375rem;
+    background: transparent;
+    color: var(--bs-secondary-color);
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+
+    &[aria-pressed='true'] {
+      background-color: var(--am-surface);
+      color: var(--bs-body-color);
+      font-weight: 600;
+      box-shadow: inset 0 0 0 1px var(--am-border-field);
+    }
+  }
+}
+
+// On/off switch with its label beside it.
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  cursor: pointer;
+  font-size: 0.9375rem;
+
+  input {
+    position: relative;
+    flex: none;
+    width: 2.25rem;
+    height: 1.25rem;
+    margin: 0;
+    border-radius: 50rem;
+    background-color: var(--am-switch-off);
+    cursor: pointer;
+    appearance: none;
+    transition: background-color 0.15s;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 1rem;
+      height: 1rem;
+      border-radius: 50%;
+      background-color: #ffffff;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+      transition: transform 0.15s;
+    }
+
+    &:checked {
+      background-color: var(--bs-primary);
+
+      &::before {
+        transform: translateX(1rem);
+      }
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch input,
+  .switch input::before {
+    transition: none;
+  }
+}
+
+// A choice drawn as a card, for a few options that each need a line of explanation.
+.radio-card {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--am-border-field);
+  border-radius: 0.75rem;
+  background-color: var(--am-surface);
+  cursor: pointer;
+
+  &:has(input:checked) {
+    border-color: var(--bs-primary);
+    background-color: var(--am-accent-bg);
+    box-shadow: inset 0 0 0 1px var(--bs-primary);
+  }
+
+  &:has(input:focus-visible) {
+    outline: 2px solid var(--am-focus);
+    outline-offset: 2px;
+  }
+
+  .rc-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+  }
+
+  .rc-desc {
+    font-size: 0.8125rem;
+    line-height: 1.125rem;
+    color: var(--bs-secondary-color);
+  }
+}
+
+.badge-neutral {
+  background-color: var(--am-field);
+  color: var(--bs-secondary-color);
+  box-shadow: inset 0 0 0 1px var(--bs-border-color);
+}
+
+// Data table with uppercase headers and row dividers.
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+
+  th {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+    background-color: var(--am-surface);
+    color: var(--bs-secondary-color);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    line-height: 1rem;
+    text-align: start;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+    vertical-align: middle;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  tbody tr:hover td,
+  tr.is-new td {
+    background-color: var(--am-accent-bg);
+  }
+
+  .row-expand td {
+    padding: 0.75rem 1rem 0.875rem;
+    background-color: var(--am-field);
+  }
+}
+
+@media (max-width: 991.98px) {
+  .tbl th,
+  .tbl td {
+    padding-right: 0.625rem;
+    padding-left: 0.625rem;
+  }
+}
+
+.tbl-wrap {
+  overflow-x: auto;
+}
+
+// A remove button turns red on hover, so the destructive action reads before it is pressed.
+.btn-remove:hover {
+  --bs-btn-hover-bg: var(--bs-danger-bg-subtle);
+  --bs-btn-hover-color: var(--bs-danger-text-emphasis);
+
+  .bi {
+    color: var(--bs-danger-text-emphasis);
+  }
+}
+
+// A list row's phone form.
+.mcard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.75rem;
+  background-color: var(--am-surface);
+}
+
+.list-gap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+// A sticky bottom action bar on phones, clear of the floating compose button.
+.mbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 12;
+  display: flex;
+  gap: 0.5rem;
+  margin: 0 -1rem -1rem;
+  padding: 0.75rem 1rem 1.25rem;
+  border-top: 1px solid var(--bs-border-color);
+  background-color: var(--am-surface);
+}
+
+// Person picker rows in a search dialog.
+.pk-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--am-accent-bg);
+  }
+
+  &.is-disabled {
+    background: none;
+    cursor: not-allowed;
+
+    .pk-name {
+      color: var(--bs-secondary-color);
+    }
+  }
+
+  .pk-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .pk-sub {
+    color: var(--bs-secondary-color);
+    font-size: 0.8125rem;
+  }
+}
+
+// Selected people, removable one by one.
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 16.25rem;
+  height: 1.75rem;
+  padding: 0 2px 0 3px;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 50rem;
+  background-color: var(--am-field);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+
+  .chip-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chip-x {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 1.375rem;
+    height: 1.375rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--am-icon);
+
+    &:hover {
+      background-color: var(--am-hover);
+    }
+  }
+}
+
+// The icon tile that leads a confirmation dialog, tinted by what the action does.
+.modal-ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.75rem;
+  font-size: 1.25rem;
+}
+
+.modal-ic-danger {
+  background-color: var(--bs-danger-bg-subtle);
+  color: var(--bs-danger-text-emphasis);
+}
+
+.modal-ic-warn {
+  background-color: var(--bs-warning-bg-subtle);
+  color: var(--bs-warning-text-emphasis);
+}
+
+.modal-ic-ok {
+  background-color: var(--am-accent-bg);
+  color: var(--am-accent);
+}
+
+.modal-ic-info {
+  background-color: var(--bs-info-bg-subtle);
+  color: var(--bs-info-text-emphasis);
+}
+
+.modal-header .modal-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.75rem;
+}
+
+// The dialog caps its height at the viewport, so a tall body scrolls between a fixed header and
+// footer. Global because the body is projected into ModalDialog, out of reach of its styles.
+.am-dialog .modal-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 767.98px) {
+  .modal-footer > .btn {
+    flex: 1 1 auto;
+    height: 3rem;
+  }
+}
+
+// Toasts (core/feedback/toast-stack).
+.am-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 300px;
+  max-width: 440px;
+  padding: 0.625rem 0.5rem 0.625rem 1rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.75rem;
+  background-color: var(--am-float);
+  box-shadow: var(--am-shadow);
+  font-size: 0.875rem;
+  pointer-events: auto;
+
+  > .bi {
+    color: var(--am-accent);
+  }
+
+  &.am-toast-error > .bi {
+    color: var(--bs-danger);
+  }
+
+  .am-toast-msg {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .am-toast-action {
+    padding: 0.375rem 0.5rem;
+    border: 0;
+    border-radius: 0.375rem;
+    background: none;
+    color: var(--bs-link-color);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .am-toast {
+    min-width: 0;
+    max-width: none;
+  }
+}
+
+// Loading placeholder that shimmers, or holds still with reduced motion.
+.sk {
+  display: block;
+  border-radius: 0.375rem;
+  background: linear-gradient(90deg, var(--am-sk-a) 0%, var(--am-sk-b) 50%, var(--am-sk-a) 100%);
+  background-size: 200% 100%;
+  animation: am-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes am-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk {
+    animation: none;
+  }
+}
+
+// The document of a rich-text editor (shared/rich-text); TipTap renders it outside Angular's styles.
+.rte-doc {
+  min-height: 6rem;
+  padding: 0.75rem 1rem;
+  outline: none;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+
+  p {
+    margin: 0;
+  }
+}
+
+// Floats over the bottom of a form while it has unsaved changes.
+.unsaved-bar {
+  position: sticky;
+  bottom: 1rem;
+  z-index: 15;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.75rem 0.75rem 1.25rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.875rem;
+  background-color: var(--am-float);
+  box-shadow: var(--am-shadow);
+
+  .unsaved-msg {
+    flex: 1 1 auto;
+    font-weight: 600;
   }
 }

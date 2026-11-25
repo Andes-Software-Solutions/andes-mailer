@@ -1,0 +1,334 @@
+<div class="page-head">
+  <div class="ph-title">
+    <h1 class="mb-1">{{ team()?.name ?? 'Team members' }}</h1>
+    <p class="mb-0 text-body-secondary">
+      @switch (store.status()) {
+        @case ('loading') {
+          Loading members…
+        }
+        @case ('loaded') {
+          {{ store.summary() }}
+        }
+        @default {
+          Team members
+        }
+      }
+    </p>
+  </div>
+  @if (canAdd() && !phone()) {
+    <button type="button" class="btn btn-primary" (click)="openAdd()">
+      <i class="bi bi-person-plus" aria-hidden="true"></i>
+      Add members
+    </button>
+  }
+</div>
+
+@if (store.status() === 'error') {
+  <div class="alert alert-danger" role="alert">
+    <i class="bi bi-exclamation-octagon" aria-hidden="true"></i>
+    <div class="flex-grow-1">{{ store.loadError() }}</div>
+    <button type="button" class="btn btn-outline btn-sm" (click)="store.retryLoad()">
+      Try again
+    </button>
+  </div>
+} @else if (store.status() === 'loaded' && store.entities().length === 0) {
+  <section class="card">
+    <app-empty-state
+      icon="people"
+      title="Add your first teammates"
+      text="Bring in the people who write and send emails for this team. You can choose who's an administrator and who can send to everyone."
+    >
+      @if (canAdd()) {
+        <button type="button" class="btn btn-primary mt-2" (click)="openAdd()">
+          <i class="bi bi-person-plus" aria-hidden="true"></i>
+          Add members
+        </button>
+      }
+    </app-empty-state>
+  </section>
+} @else {
+  <div class="filters">
+    <label class="input-icon search">
+      <span class="visually-hidden">Search members</span>
+      <i class="bi bi-search" aria-hidden="true"></i>
+      <input
+        type="search"
+        class="form-control"
+        placeholder="Search by name or email"
+        [value]="store.search()"
+        (input)="onSearch($event)"
+      />
+    </label>
+    <div class="seg" role="group" aria-label="Filter by role">
+      @for (filter of filters; track filter.value) {
+        <button
+          type="button"
+          [attr.aria-pressed]="store.roleFilter() === filter.value"
+          (click)="store.setRoleFilter(filter.value)"
+        >
+          {{ filter.label }}
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (store.status() === 'loading') {
+    <section class="card" aria-busy="true" aria-label="Loading members">
+      @for (row of [1, 2, 3, 4, 5]; track row) {
+        <div class="skeleton-row">
+          <span class="sk sk-avatar"></span>
+          <span class="flex-grow-1 d-flex flex-column gap-2">
+            <span class="sk sk-line"></span>
+            <span class="sk sk-line-short"></span>
+          </span>
+        </div>
+      }
+    </section>
+  } @else if (store.visible().length === 0) {
+    <section class="card">
+      <app-empty-state
+        icon="search"
+        [title]="
+          store.search()
+            ? 'No members match ‘' + store.search() + '’'
+            : 'No members match this filter'
+        "
+        text="Check the spelling, or add them to the team."
+      >
+        <div class="d-flex gap-2 mt-2">
+          <button type="button" class="btn btn-outline" (click)="store.clearSearch()">
+            Clear search
+          </button>
+          @if (canAdd()) {
+            <button type="button" class="btn btn-primary" (click)="openAdd()">Add members</button>
+          }
+        </div>
+      </app-empty-state>
+    </section>
+  } @else if (phone()) {
+    <ul class="list-gap list-unstyled mb-0" aria-label="Members">
+      @for (member of store.visible(); track member.userId) {
+        <li class="mcard" [class.is-new]="isNew(member)">
+          <div class="d-flex align-items-center gap-3">
+            <span
+              class="avatar avatar-lg"
+              [class.avatar-me]="member.userId === selfId()"
+              [class.avatar-person]="member.userId !== selfId()"
+              aria-hidden="true"
+              >{{ initials(member.fullName) }}</span
+            >
+            <div class="flex-grow-1 min-w-0">
+              <div class="fw-semibold text-truncate">
+                {{ member.fullName }}
+                @if (member.userId === selfId()) {
+                  <span class="text-body-secondary fw-normal">(You)</span>
+                }
+                @if (isNew(member)) {
+                  <span class="badge badge-admin ms-1">New</span>
+                }
+              </div>
+              <div class="small text-body-secondary text-truncate">{{ member.email }}</div>
+            </div>
+            @if (canRemove()) {
+              <app-member-actions
+                [member]="member"
+                [disabled]="isPending(member)"
+                (remove)="askRemove(member)"
+              />
+            }
+          </div>
+          <div class="divider"></div>
+          <label class="d-flex align-items-center justify-content-between gap-3">
+            <span class="small fw-semibold">Role</span>
+            <select
+              class="form-select role-select-mobile"
+              [value]="member.role"
+              [disabled]="!canChange() || isPending(member)"
+              (change)="onRoleChange(member, $event)"
+            >
+              <option value="TeamAdministrator">Administrator</option>
+              <option value="TeamMember">Member</option>
+            </select>
+          </label>
+        </li>
+      }
+    </ul>
+    @if (canAdd()) {
+      <div class="mbar">
+        <button type="button" class="btn btn-primary btn-lg flex-grow-1" (click)="openAdd()">
+          <i class="bi bi-person-plus" aria-hidden="true"></i>
+          Add members
+        </button>
+      </div>
+    }
+  } @else {
+    <section class="card">
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <caption class="visually-hidden">
+            Members of
+            {{
+              team()?.name
+            }}
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Member</th>
+              <th scope="col">Email</th>
+              <th scope="col">Role</th>
+              @if (!tablet()) {
+                <th scope="col">Added</th>
+              }
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+              @if (tablet()) {
+                <th scope="col"><span class="visually-hidden">Details</span></th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (member of store.visible(); track member.userId) {
+              <tr [class.is-new]="isNew(member)">
+                <td>
+                  <div class="d-flex align-items-center gap-3">
+                    <span
+                      class="avatar avatar-member"
+                      [class.avatar-me]="member.userId === selfId()"
+                      [class.avatar-person]="member.userId !== selfId()"
+                      aria-hidden="true"
+                      >{{ initials(member.fullName) }}</span
+                    >
+                    <span class="fw-semibold">
+                      {{ member.fullName }}
+                      @if (member.userId === selfId()) {
+                        <span class="text-body-secondary fw-normal">(You)</span>
+                      }
+                    </span>
+                    @if (isNew(member)) {
+                      <span class="badge badge-admin">New</span>
+                    }
+                  </div>
+                </td>
+                <td class="text-break">{{ member.email }}</td>
+                <td>
+                  <select
+                    class="form-select form-select-sm role-select"
+                    [attr.aria-label]="'Role of ' + member.fullName"
+                    [value]="member.role"
+                    [disabled]="!canChange() || isPending(member)"
+                    (change)="onRoleChange(member, $event)"
+                  >
+                    <option value="TeamAdministrator">Administrator</option>
+                    <option value="TeamMember">Member</option>
+                  </select>
+                </td>
+                @if (!tablet()) {
+                  <td class="text-body-secondary text-nowrap">
+                    {{ member.dateCreated | date: 'mediumDate' }}
+                  </td>
+                }
+                <td class="text-end">
+                  @if (canRemove()) {
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-icon btn-sm btn-remove"
+                      [attr.aria-label]="'Remove ' + member.fullName"
+                      [disabled]="isPending(member)"
+                      (click)="askRemove(member)"
+                    >
+                      <i class="bi bi-trash3" aria-hidden="true"></i>
+                    </button>
+                  }
+                </td>
+                @if (tablet()) {
+                  <td class="text-end">
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-icon btn-sm"
+                      [attr.aria-label]="'Show more about ' + member.fullName"
+                      [attr.aria-expanded]="expanded() === member.userId"
+                      (click)="toggleExpanded(member)"
+                    >
+                      <i
+                        class="bi"
+                        [class.bi-chevron-down]="expanded() !== member.userId"
+                        [class.bi-chevron-up]="expanded() === member.userId"
+                        aria-hidden="true"
+                      ></i>
+                    </button>
+                  </td>
+                }
+              </tr>
+              @if (tablet() && expanded() === member.userId) {
+                <tr class="row-expand">
+                  <td colspan="5">
+                    <span class="t-micro me-2">Added</span>
+                    {{ member.dateCreated | date: 'mediumDate' }}
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+}
+
+@if (adding() && team(); as current) {
+  <app-add-members
+    [teamName]="current.name"
+    [memberIds]="store.memberIds()"
+    [busy]="store.adding()"
+    [failures]="addFailures()"
+    (submitted)="add($event)"
+    (dismissed)="closeAdd()"
+  />
+}
+
+@if (pending(); as question) {
+  @if (question.kind === 'promote') {
+    <app-confirm-dialog
+      tone="ok"
+      [heading]="'Make ' + question.member.fullName + ' an administrator?'"
+      confirmLabel="Make administrator"
+      [busy]="busy()"
+      (confirmed)="confirm()"
+      (cancelled)="cancel()"
+    >
+      <p class="mb-0">
+        {{ question.member.fullName }} will be able to add and remove members and change settings.
+      </p>
+    </app-confirm-dialog>
+  } @else if (question.kind === 'remove') {
+    <app-confirm-dialog
+      tone="danger"
+      heading="Remove member"
+      confirmLabel="Remove"
+      [busy]="busy()"
+      (confirmed)="confirm()"
+      (cancelled)="cancel()"
+    >
+      <p class="mb-0">
+        Remove {{ question.member.fullName }} from {{ team()?.name }}? They'll lose access to this
+        team's drafts and sending.
+      </p>
+    </app-confirm-dialog>
+  } @else {
+    <app-confirm-dialog
+      tone="info"
+      [heading]="
+        question.name
+          ? question.name + ' is the only administrator'
+          : 'You\'re the only administrator'
+      "
+      confirmLabel="Got it"
+      cancelLabel=""
+      (confirmed)="cancel()"
+      (cancelled)="cancel()"
+    >
+      <p class="mb-0">
+        Every team needs at least one administrator. Make someone else an administrator first.
+      </p>
+    </app-confirm-dialog>
+  }
+}

@@ -76,6 +76,7 @@ public sealed class CurrentUserService(AndesMailerDbContext ctx) : ICurrentUserS
             {
                 t.Id,
                 t.Name,
+                t.AvatarColorId,
                 Role = t.Members.Where(m => m.UserId == userId).Select(m => (Roles?)m.RoleId).FirstOrDefault(),
             })
             .ToListAsync(cancellationToken);
@@ -86,6 +87,7 @@ public sealed class CurrentUserService(AndesMailerDbContext ctx) : ICurrentUserS
             .. visibleTeams.Select(t => new CurrentUserTeamDto(
                 t.Id,
                 t.Name,
+                t.AvatarColorId,
                 t.Role,
                 Sort(t.Role is { } role ? globalPermissions.Union(grants[role]) : globalPermissions))),
         ];

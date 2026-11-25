@@ -1,0 +1,186 @@
+<app-modal-dialog
+  size="lg"
+  labelledBy="add-members-title"
+  [busy]="busy()"
+  (dismissed)="dismissed.emit()"
+>
+  <form class="d-contents" (submit)="$event.preventDefault(); submit()">
+    <div class="modal-header border-0">
+      <h2 class="modal-title flex-grow-1" id="add-members-title">
+        Add members to {{ teamName() }}
+      </h2>
+      <button
+        type="button"
+        class="btn btn-ghost btn-icon btn-sm"
+        aria-label="Close"
+        [disabled]="busy()"
+        (click)="dismissed.emit()"
+      >
+        <i class="bi bi-x-lg" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    <div class="modal-body d-flex flex-column gap-3 pt-0">
+      @if (remaining().length > 0) {
+        <div>
+          <p class="t-micro mb-2">{{ remaining().length }} selected</p>
+          <ul class="chips list-unstyled mb-0" aria-label="Selected people">
+            @for (person of remaining(); track person.id) {
+              <li class="chip" [class.chip-failed]="failureFor().has(person.email)">
+                <span class="avatar avatar-sm avatar-person" aria-hidden="true">{{
+                  initials(person.fullName)
+                }}</span>
+                <span class="chip-label">{{ person.fullName }}</span>
+                <button
+                  type="button"
+                  class="chip-x"
+                  [attr.aria-label]="'Remove ' + person.fullName"
+                  [disabled]="busy()"
+                  (click)="unselect(person)"
+                >
+                  <i class="bi bi-x" aria-hidden="true"></i>
+                </button>
+              </li>
+            }
+          </ul>
+        </div>
+      }
+
+      @if (failures().length > 0) {
+        <div class="alert alert-danger mb-0" role="alert">
+          <i class="bi bi-exclamation-octagon" aria-hidden="true"></i>
+          <div>
+            <p class="mb-1 fw-semibold">
+              We couldn't add
+              {{ failures().length === 1 ? 'one person' : failures().length + ' people' }}. They're
+              still selected, so you can try again.
+            </p>
+            <ul class="mb-0 ps-3">
+              @for (failure of failures(); track failure.email) {
+                <li>{{ failure.email }}: {{ failure.message }}</li>
+              }
+            </ul>
+          </div>
+        </div>
+      }
+
+      <label class="input-icon">
+        <span class="visually-hidden">Search people in the directory</span>
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input
+          #searchInput
+          type="search"
+          class="form-control"
+          placeholder="Search people in Andes"
+          autocomplete="off"
+          aria-controls="add-members-results"
+          [value]="query()"
+          [disabled]="busy()"
+          (input)="onQuery($event)"
+        />
+      </label>
+
+      <div id="add-members-results" class="results" aria-live="polite">
+        @let state = results();
+        @if (state.status === 'loading') {
+          <div aria-busy="true" aria-label="Searching">
+            @for (row of [1, 2, 3]; track row) {
+              <div class="pk-row">
+                <span class="sk sk-avatar"></span>
+                <span class="sk sk-line"></span>
+              </div>
+            }
+          </div>
+        } @else if (state.status === 'error') {
+          <p class="text-danger mb-0 small">{{ state.message }}</p>
+        } @else if (state.status === 'done') {
+          @for (person of state.results; track person.id) {
+            <label class="pk-row" [class.is-disabled]="isMember(person)">
+              <input
+                type="checkbox"
+                class="form-check-input mt-0"
+                [checked]="isMember(person) || selectedIds().has(person.id)"
+                [disabled]="isMember(person) || busy()"
+                (change)="toggle(person)"
+              />
+              <span class="avatar avatar-person" aria-hidden="true">{{
+                initials(person.fullName)
+              }}</span>
+              <span class="d-flex flex-column min-w-0 flex-grow-1">
+                <span class="pk-name text-truncate">{{ person.fullName }}</span>
+                <span class="pk-sub text-truncate">{{ person.email }}</span>
+              </span>
+              @if (isMember(person)) {
+                <span class="badge badge-neutral">Already a member</span>
+              }
+            </label>
+          } @empty {
+            <div class="text-center py-3">
+              <p class="fw-semibold mb-1">No people found for ‘{{ query().trim() }}’</p>
+              <p class="text-body-secondary small mb-0">
+                Search by first name, last name or work email.
+              </p>
+            </div>
+          }
+        } @else {
+          <p class="text-body-secondary small mb-0">
+            Type at least two letters of a name or work email.
+          </p>
+        }
+      </div>
+
+      <fieldset>
+        <legend class="t-micro mb-2">Permissions for new members</legend>
+        <div class="d-flex flex-column flex-sm-row gap-2">
+          <label class="radio-card">
+            <input
+              type="radio"
+              class="form-check-input mt-1"
+              name="add-members-role"
+              value="TeamMember"
+              [checked]="role() === 'TeamMember'"
+              [disabled]="busy()"
+              (change)="setRole('TeamMember')"
+            />
+            <span>
+              <span class="rc-title d-block">Member</span>
+              <span class="rc-desc d-block">Can write and send emails</span>
+            </span>
+          </label>
+          <label class="radio-card">
+            <input
+              type="radio"
+              class="form-check-input mt-1"
+              name="add-members-role"
+              value="TeamAdministrator"
+              [checked]="role() === 'TeamAdministrator'"
+              [disabled]="busy()"
+              (change)="setRole('TeamAdministrator')"
+            />
+            <span>
+              <span class="rc-title d-block">Administrator</span>
+              <span class="rc-desc d-block">Can also manage members and settings</span>
+            </span>
+          </label>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline" [disabled]="busy()" (click)="dismissed.emit()">
+        Cancel
+      </button>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        [disabled]="remaining().length === 0 || busy()"
+        [attr.aria-busy]="busy() || null"
+      >
+        @if (busy()) {
+          <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+        }
+        {{ submitLabel() }}
+      </button>
+    </div>
+  </form>
+</app-modal-dialog>

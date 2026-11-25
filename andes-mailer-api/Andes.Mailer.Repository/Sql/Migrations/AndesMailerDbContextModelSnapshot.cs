@@ -805,6 +805,12 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("AvatarColorId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ConfirmRecipientsAbove")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset>("DateCreated")
                         .HasColumnType("datetimeoffset");
 
@@ -813,6 +819,9 @@ namespace Andes.Mailer.Repository.Sql.Migrations
 
                     b.Property<DateTimeOffset?>("DateModified")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DefaultSignature")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)
@@ -839,6 +848,8 @@ namespace Andes.Mailer.Repository.Sql.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AvatarColorId");
+
                     b.HasIndex("DateDeactivated");
 
                     b.HasIndex("Name")
@@ -853,7 +864,70 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         .IsUnique()
                         .HasFilter("[DateDeactivated] IS NULL");
 
-                    b.ToTable("Team", "Core");
+                    b.ToTable("Team", "Core", t =>
+                        {
+                            t.HasCheckConstraint("CK_Team_ConfirmRecipientsAbove", "[ConfirmRecipientsAbove] BETWEEN 1 AND 500");
+                        });
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Teams.TeamColor", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("TeamColor", "Core.Ref");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Description = "Light mint",
+                            Name = "Mint"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Description = "Seafoam",
+                            Name = "Seafoam"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Description = "Mist",
+                            Name = "Mist"
+                        },
+                        new
+                        {
+                            Id = 4,
+                            Description = "Sky",
+                            Name = "Sky"
+                        },
+                        new
+                        {
+                            Id = 5,
+                            Description = "Andes green",
+                            Name = "Green"
+                        },
+                        new
+                        {
+                            Id = 6,
+                            Description = "Ocean blue",
+                            Name = "Ocean"
+                        });
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Teams.TeamMember", b =>
@@ -1179,6 +1253,11 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                         {
                             RoleId = 2,
                             PermissionId = 14
+                        },
+                        new
+                        {
+                            RoleId = 2,
+                            PermissionId = 9
                         },
                         new
                         {
@@ -1517,6 +1596,17 @@ namespace Andes.Mailer.Repository.Sql.Migrations
                     b.Navigation("RecipientType");
 
                     b.Navigation("Template");
+                });
+
+            modelBuilder.Entity("Andes.Mailer.Entity.Teams.Team", b =>
+                {
+                    b.HasOne("Andes.Mailer.Entity.Teams.TeamColor", "AvatarColor")
+                        .WithMany()
+                        .HasForeignKey("AvatarColorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AvatarColor");
                 });
 
             modelBuilder.Entity("Andes.Mailer.Entity.Teams.TeamMember", b =>

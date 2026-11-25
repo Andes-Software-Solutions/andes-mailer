@@ -1,0 +1,96 @@
+<div class="page-head">
+  <div class="ph-title">
+    <h1 class="mb-1">Teams</h1>
+    <p class="mb-0 text-body-secondary">
+      {{ store.status() === 'loading' ? 'Loading teams…' : summary() }}
+    </p>
+  </div>
+  <button type="button" class="btn btn-primary" (click)="creating.set(true)">
+    <i class="bi bi-plus-lg" aria-hidden="true"></i>
+    New team
+  </button>
+</div>
+
+@if (store.status() === 'error') {
+  <div class="alert alert-danger" role="alert">
+    <i class="bi bi-exclamation-octagon" aria-hidden="true"></i>
+    <div class="flex-grow-1">{{ store.loadError() }}</div>
+    <button type="button" class="btn btn-outline btn-sm" (click)="store.load()">Try again</button>
+  </div>
+} @else if (store.status() === 'loading') {
+  <section class="card" aria-busy="true" aria-label="Loading teams">
+    @for (row of [1, 2, 3]; track row) {
+      <div class="skeleton-row">
+        <span class="sk sk-avatar"></span>
+        <span class="sk sk-line"></span>
+      </div>
+    }
+  </section>
+} @else if (sorted().length === 0) {
+  <section class="card">
+    <app-empty-state
+      icon="diagram-3"
+      title="Create your first team"
+      text="A team is a group of people who write emails together and send them from one shared mailbox."
+    >
+      <button type="button" class="btn btn-primary mt-2" (click)="creating.set(true)">
+        New team
+      </button>
+    </app-empty-state>
+  </section>
+} @else {
+  <ul class="list-gap list-unstyled mb-0" aria-label="Teams">
+    @for (team of sorted(); track team.id) {
+      <li class="team-row">
+        <app-team-avatar class="avatar-lg" [name]="team.name" [color]="team.avatarColor" />
+        <div class="flex-grow-1 min-w-0">
+          <p class="fw-semibold mb-0 text-truncate">{{ team.name }}</p>
+          <p class="small text-body-secondary mb-0 text-truncate">
+            {{ team.serviceAccountEmail }} · {{ team.memberCount }}
+            {{ team.memberCount === 1 ? 'member' : 'members' }} · {{ roleLabel(team) }}
+          </p>
+          @if (team.description) {
+            <p class="small mb-0 text-truncate">{{ team.description }}</p>
+          }
+        </div>
+        <div class="d-flex gap-2 flex-none">
+          <button type="button" class="btn btn-outline btn-sm" (click)="open(team)">
+            Settings
+            <span class="visually-hidden">of {{ team.name }}</span>
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-icon btn-sm btn-remove"
+            [attr.aria-label]="'Deactivate ' + team.name"
+            [disabled]="store.deactivatingId() === team.id"
+            (click)="deactivating.set(team)"
+          >
+            <i class="bi bi-archive" aria-hidden="true"></i>
+          </button>
+        </div>
+      </li>
+    }
+  </ul>
+}
+
+@if (creating()) {
+  <app-new-team (created)="created($event)" (dismissed)="creating.set(false)" />
+}
+
+@if (deactivating(); as team) {
+  <app-confirm-dialog
+    tone="danger"
+    [heading]="'Deactivate ' + team.name + '?'"
+    confirmLabel="Deactivate team"
+    [busy]="store.deactivatingId() === team.id"
+    (confirmed)="confirmDeactivate()"
+    (cancelled)="cancelDeactivate()"
+  >
+    <p class="mb-0">
+      Its {{ team.memberCount }}
+      {{ team.memberCount === 1 ? 'member loses' : 'members lose' }} access, and its drafts,
+      templates and contact groups are hidden. Its name and mailbox become free for another team.
+      This can't be undone from the app.
+    </p>
+  </app-confirm-dialog>
+}
