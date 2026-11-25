@@ -181,7 +181,9 @@ public sealed class TeamService(AndesMailerDbContext ctx, IDirectoryUserService 
         await EnsureAvailableAsync(team, cancellationToken);
         await SaveAsync(team, cancellationToken);
 
-        return await GetAsync(id, cancellationToken);
+        // Not cancellable: the change is committed, and a cancelled read would free the Idempotency-Key, so a retry would hit the
+        // stale version as a 409 instead of replaying this result.
+        return await GetAsync(id, CancellationToken.None);
     }
 
     /// <inheritdoc/>

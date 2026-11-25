@@ -111,8 +111,13 @@ export const TeamSettingsStore = signalStore(
           );
 
           store._save.settle();
-          patchState(store, { team: saved });
-          store._toasts.show({ message: 'Settings saved' });
+
+          // The person may have switched team while this saved; the page now shows that team.
+          if (store.team()?.id === team.id) {
+            patchState(store, { team: saved });
+          }
+
+          store._toasts.show({ message: `${saved.name} settings saved` });
 
           // The switcher shows the name and colour.
           if (saved.name !== team.name || saved.avatarColor !== team.avatarColor) {
@@ -127,7 +132,7 @@ export const TeamSettingsStore = signalStore(
             message: problemMessage(error, "We couldn't save the settings."),
           });
 
-          if (problemStatus(error) !== 409) {
+          if (problemStatus(error) !== 409 || store.team()?.id !== team.id) {
             return 'failed';
           }
 

@@ -1,6 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { FormField, form } from '@angular/forms/signals';
+import { FormField, form, readonly } from '@angular/forms/signals';
 import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { EmailAutocomplete, EmailSuggester } from './email-autocomplete';
@@ -17,8 +17,9 @@ const suggestions = [
   `,
 })
 class Host {
+  readonly frozen = signal(false);
   readonly model = signal({ mailbox: '' });
-  readonly form = form(this.model);
+  readonly form = form(this.model, (path) => readonly(path.mailbox, () => this.frozen()));
   readonly lookups = vi.fn<EmailSuggester>(() => of(suggestions));
   readonly suggest = signal<EmailSuggester>(this.lookups);
 }
@@ -101,6 +102,21 @@ describe('EmailAutocomplete', () => {
     await fixture.whenStable();
 
     expect(escape.defaultPrevented).toBe(true);
+    expect(field().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('picks nothing while the field is read-only, as during a save', async () => {
+    await type('pre');
+    const option = options()[0];
+    fixture.componentInstance.frozen.set(true);
+    await fixture.whenStable();
+
+    await press('ArrowDown');
+    await press('Enter');
+    option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.model().mailbox).toBe('pre');
     expect(field().getAttribute('aria-expanded')).toBe('false');
   });
 

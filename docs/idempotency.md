@@ -58,15 +58,17 @@ Two requests are "the same" when they have the same **caller**, **key**, and **f
 | New key | The request runs. |
 | Same key and fingerprint, first request **succeeded** (any 2xx) | The first response is returned again with `Idempotent-Replayed: true`. The change is not repeated. |
 | Same key, **different** method, path, or body | 422 Unprocessable Content. The key already means another request; use a new one. |
-| Same key and fingerprint while the first request is **still running** | 409 with `Retry-After: 1`. Wait and send the same request again. |
+| Same key and fingerprint while the first request is **still running** | 409 with `Retry-After: 1`, for as long as it runs. Wait and send the same request again. |
 | First request **failed** (4xx, 5xx, or an exception) | Nothing is stored. The key is free, so the client can fix the request and reuse it. |
 | No header | The request runs with no memory of it. |
 
 Only successes are kept because a failure left nothing to repeat, and a client that fixes a validation error should not have to invent a new key.
 
+A cancelled request counts as a failure and frees its key. So the team and member writes read their result back after the commit with a query that ignores cancellation: a client that disconnects right after the change is saved still gets the replay when it retries, not a 409 on a stale version or a repeated add.
+
 ### How long a key lives
 
-Entries live for `Idempotency:Expiration`, counted from the moment the request **completed**. It defaults to 5 minutes and must be between 1 second and 24 hours. A request that never finishes holds its key for the same time, then the key frees itself.
+A completed success lives for `Idempotency:Expiration`, counted from the moment the request **completed**. It defaults to 5 minutes and must be between 1 second and 24 hours. A request that is still running keeps its key reserved until it finishes, however long that takes, and repeats get the 409 meanwhile: expiring the reservation would let a retry run the change a second time while the first one still runs. The filter always completes or frees the key when its request ends. Each reservation has its own identity, so a request completes or frees only the entry it reserved itself.
 
 ```json
 {

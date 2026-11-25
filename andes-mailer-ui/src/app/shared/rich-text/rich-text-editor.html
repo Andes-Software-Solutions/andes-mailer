@@ -47,9 +47,23 @@
         (keydown.enter)="$event.preventDefault(); applyLink()"
         (keydown.escape)="$event.stopPropagation(); cancelLink()"
       />
-      <button type="button" class="btn btn-primary btn-sm" (click)="applyLink()">Apply</button>
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        [disabled]="disabled() || readonly()"
+        (click)="applyLink()"
+      >
+        Apply
+      </button>
       @if (active().link) {
-        <button type="button" class="btn btn-outline btn-sm" (click)="removeLink()">Remove</button>
+        <button
+          type="button"
+          class="btn btn-outline btn-sm"
+          [disabled]="disabled() || readonly()"
+          (click)="removeLink()"
+        >
+          Remove
+        </button>
       }
       <button type="button" class="btn btn-ghost btn-sm" (click)="cancelLink()">Cancel</button>
     </div>

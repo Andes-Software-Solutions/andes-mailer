@@ -110,6 +110,24 @@ public sealed class TeamServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdateAsync_CancelledAfterCommit_ReturnsUpdatedTeam()
+    {
+        var team = await _fixture.AddTeamAsync("Sales", "sales@contoso.com");
+        var caller = await _fixture.AddUserAsync("ada@contoso.com");
+        using var request = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        await using var ctx = _fixture.CreateContext(new CancelAfterCommit(request));
+
+        var updated = await CreateService(ctx).UpdateAsync(
+            caller.Id,
+            team.Id,
+            Settings("Sales EMEA", null, "sales@contoso.com", team.Version),
+            request.Token);
+
+        Assert.True(request.IsCancellationRequested);
+        Assert.Equal("Sales EMEA", updated.Name);
+    }
+
+    [Fact]
     public async Task UpdateAsync_AdministratorChangesServiceAccount_VerifiesItInDirectory()
     {
         var team = await _fixture.AddTeamAsync("Sales", "sales@contoso.com");

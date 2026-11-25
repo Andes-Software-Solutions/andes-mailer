@@ -4,9 +4,12 @@ import { Router, provideRouter } from '@angular/router';
 import { CurrentUser } from '@core/api/current-user.model';
 import { IDEMPOTENCY_KEY } from '@core/api/idempotency/idempotency-key';
 import { Team } from '@core/api/team.model';
+import { SessionStore } from '@core/auth/session-store';
+import { UnsavedChanges } from '@shared/forms/unsaved-changes';
 import {
   adminUser,
   communicationsTeam,
+  hrTeam,
   meUrl,
   memberUser,
   provideSessionTesting,
@@ -227,6 +230,59 @@ describe('TeamSettings', () => {
 
     expect(element(fixture).textContent).not.toContain('Someone else changed these settings');
     expect(input(fixture, 'team-name').value).toBe('Press Office');
+  });
+
+  it('keeps the form read-only while it saves', async () => {
+    const fixture = await render(memberUser);
+    await edit(fixture, 'Comms');
+
+    await clickSave(fixture);
+    expect(input(fixture, 'team-name').readOnly).toBe(true);
+    expect(input(fixture, 'team-name').disabled).toBe(false);
+
+    backend
+      .expectOne((r) => r.url === teamUrl && r.method === 'PUT')
+      .flush({ ...team, name: 'Comms', version: 'AAAAAAAAB9F=' });
+    await fixture.whenStable();
+    backend.expectOne(meUrl).flush(memberUser);
+    await vi.waitFor(async () => {
+      await fixture.whenStable();
+      expect(input(fixture, 'team-name').readOnly).toBe(false);
+    });
+  });
+
+  it('keeps showing the new team when a save for the old one finishes after switching', async () => {
+    const fixture = await render(memberUser);
+    await edit(fixture, 'Comms');
+    await clickSave(fixture);
+    const put = backend.expectOne((r) => r.url === teamUrl && r.method === 'PUT');
+
+    TestBed.inject(SessionStore).selectTeam(hrTeam.id);
+    TestBed.tick();
+    backend
+      .expectOne(`/api/teams/${hrTeam.id}`)
+      .flush({ ...team, id: hrTeam.id, name: 'Human Resources' });
+    await fixture.whenStable();
+    put.flush({ ...team, name: 'Comms', version: 'AAAAAAAAB9F=' });
+    await fixture.whenStable();
+    backend.expectOne(meUrl).flush(memberUser);
+    await fixture.whenStable();
+
+    expect(input(fixture, 'team-name').value).toBe('Human Resources');
+  });
+
+  it('tells the team switcher about unsaved edits', async () => {
+    const fixture = await render(memberUser);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const unsaved = TestBed.inject(UnsavedChanges);
+
+    expect(unsaved.confirmDiscard('Switch team and discard them?')).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+
+    await edit(fixture, 'Comms');
+
+    expect(unsaved.confirmDiscard('Switch team and discard them?')).toBe(false);
+    expect(confirm).toHaveBeenCalledWith('You have unsaved changes. Switch team and discard them?');
   });
 
   it('leaves the team and goes home', async () => {

@@ -387,7 +387,7 @@ Profile and Help need no permission. Pages that are not built yet are placeholde
 
 ### Switching teams
 
-The team switcher in the sidebar (and a compact chip in the tablet top bar) calls `selectTeam`. Because the permission set is a signal, the navigation, the **New email** button, and every `*appHasPermission` update at once. A shell route also declares the permissions its guard needs in `data.permissions`; when a team switch means the open page is no longer permitted, the shell navigates home, as the guard would have on a fresh visit.
+The team switcher in the sidebar (and a compact chip in the tablet top bar) calls `selectTeam`. Because the permission set is a signal, the navigation, the **New email** button, and every `*appHasPermission` update at once. A shell route also declares the permissions its guard needs in `data.permissions`; when a team switch means the open page is no longer permitted, the shell navigates home, as the guard would have on a fresh visit. Before it switches, the switcher asks whether to discard unsaved edits on the open page (see [Team settings](teams.md#the-ui)).
 
 ### Add a guarded page or menu entry
 

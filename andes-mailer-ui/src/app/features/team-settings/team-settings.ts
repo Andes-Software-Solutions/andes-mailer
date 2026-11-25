@@ -1,4 +1,4 @@
-import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, linkedSignal, signal } from '@angular/core';
 import {
   FormField,
   disabled,
@@ -7,6 +7,7 @@ import {
   max,
   maxLength,
   min,
+  readonly,
   required,
   submit,
 } from '@angular/forms/signals';
@@ -16,6 +17,7 @@ import { Team, TeamColor, teamColorLabels, teamColors } from '@core/api/team.mod
 import { routePaths } from '@core/navigation/route-paths';
 import { ConfirmDialog } from '@shared/dialog/confirm-dialog';
 import { EmailAutocomplete, EmailSuggester } from '@shared/email-autocomplete/email-autocomplete';
+import { UnsavedChanges } from '@shared/forms/unsaved-changes';
 import { HasUnsavedChanges } from '@shared/forms/unsaved-changes-guard';
 import { RichTextEditor } from '@shared/rich-text/rich-text-editor';
 import { TeamAvatar } from '@shared/team-avatar/team-avatar';
@@ -101,18 +103,26 @@ export class TeamSettings implements HasUnsavedChanges {
     });
     max(path.confirmRecipientsAbove, RECIPIENTS_MAX, { message: `Use at most ${RECIPIENTS_MAX}.` });
     disabled(path, () => !this.store.canEdit());
+    // The saved response replaces the form, so an edit made meanwhile would be lost. Read-only rather
+    // than disabled, so the field someone pressed Enter in keeps focus.
+    readonly(path, () => this.store.saving());
   });
 
   protected readonly dirty = computed(
     () => this.store.team() !== null && !sameModel(this.model(), this._saved()),
   );
 
+  constructor() {
+    // Switching team reloads this page without navigating, so the route guard alone never asks.
+    inject(UnsavedChanges).track(this, inject(DestroyRef));
+  }
+
   hasUnsavedChanges(): boolean {
     return this.dirty();
   }
 
   protected setColor(color: TeamColor): void {
-    if (this.store.canEdit()) {
+    if (this.store.canEdit() && !this.store.saving()) {
       this.model.update((model) => ({ ...model, avatarColor: color }));
     }
   }

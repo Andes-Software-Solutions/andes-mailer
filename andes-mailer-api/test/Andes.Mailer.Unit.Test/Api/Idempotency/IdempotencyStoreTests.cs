@@ -35,8 +35,8 @@ public sealed class IdempotencyStoreTests
     public void Begin_SameKeyAfterSuccess_ReplaysResult()
     {
         var result = new object();
-        _store.Begin(Key, Fingerprint);
-        _store.Complete(Key, Fingerprint, result);
+        var reservation = _store.Begin(Key, Fingerprint).Reservation;
+        _store.Complete(Key, reservation, result);
 
         var lookup = _store.Begin(Key, Fingerprint);
 
@@ -47,8 +47,8 @@ public sealed class IdempotencyStoreTests
     [Fact]
     public void Begin_SameKeyDifferentRequest_IsMismatch()
     {
-        _store.Begin(Key, Fingerprint);
-        _store.Complete(Key, Fingerprint, new object());
+        var reservation = _store.Begin(Key, Fingerprint).Reservation;
+        _store.Complete(Key, reservation, new object());
 
         Assert.Equal(IdempotencyOutcomes.Mismatch, _store.Begin(Key, "other").Outcome);
     }
@@ -56,8 +56,8 @@ public sealed class IdempotencyStoreTests
     [Fact]
     public void Begin_AfterRelease_StartsAgainWithAnyRequest()
     {
-        _store.Begin(Key, Fingerprint);
-        _store.Release(Key, Fingerprint);
+        var reservation = _store.Begin(Key, Fingerprint).Reservation;
+        _store.Release(Key, reservation);
 
         Assert.Equal(IdempotencyOutcomes.Started, _store.Begin(Key, "fixed request").Outcome);
     }
@@ -65,10 +65,10 @@ public sealed class IdempotencyStoreTests
     [Fact]
     public void Release_CompletedKey_KeepsResult()
     {
-        _store.Begin(Key, Fingerprint);
-        _store.Complete(Key, Fingerprint, new object());
+        var reservation = _store.Begin(Key, Fingerprint).Reservation;
+        _store.Complete(Key, reservation, new object());
 
-        _store.Release(Key, Fingerprint);
+        _store.Release(Key, reservation);
 
         Assert.Equal(IdempotencyOutcomes.Completed, _store.Begin(Key, Fingerprint).Outcome);
     }
@@ -76,8 +76,8 @@ public sealed class IdempotencyStoreTests
     [Fact]
     public void Begin_AfterExpiration_StartsAgain()
     {
-        _store.Begin(Key, Fingerprint);
-        _store.Complete(Key, Fingerprint, new object());
+        var reservation = _store.Begin(Key, Fingerprint).Reservation;
+        _store.Complete(Key, reservation, new object());
 
         _time.Advance(_expiration);
 
@@ -87,8 +87,8 @@ public sealed class IdempotencyStoreTests
     [Fact]
     public void Begin_JustBeforeExpiration_StillReplays()
     {
-        _store.Begin(Key, Fingerprint);
-        _store.Complete(Key, Fingerprint, new object());
+        var reservation = _store.Begin(Key, Fingerprint).Reservation;
+        _store.Complete(Key, reservation, new object());
 
         _time.Advance(_expiration - TimeSpan.FromSeconds(1));
 
@@ -96,13 +96,48 @@ public sealed class IdempotencyStoreTests
     }
 
     [Fact]
-    public void Begin_RunningKeyAfterExpiration_StartsAgain()
+    public void Begin_RunningKeyPastExpiration_IsStillInProgress()
     {
         _store.Begin(Key, Fingerprint);
 
-        _time.Advance(_expiration);
+        _time.Advance(_expiration * 2);
+
+        Assert.Equal(IdempotencyOutcomes.InProgress, _store.Begin(Key, Fingerprint).Outcome);
+    }
+
+    [Fact]
+    public void Begin_RunningKeyReleasedAfterExpiration_StartsAgain()
+    {
+        var reservation = _store.Begin(Key, Fingerprint).Reservation;
+        _time.Advance(_expiration * 2);
+
+        _store.Release(Key, reservation);
 
         Assert.Equal(IdempotencyOutcomes.Started, _store.Begin(Key, Fingerprint).Outcome);
+    }
+
+    [Fact]
+    public void Complete_AnotherReservation_LeavesTheRunningRequestInProgress()
+    {
+        var stale = _store.Begin(Key, Fingerprint).Reservation;
+        _store.Release(Key, stale);
+        _store.Begin(Key, Fingerprint);
+
+        _store.Complete(Key, stale, new object());
+
+        Assert.Equal(IdempotencyOutcomes.InProgress, _store.Begin(Key, Fingerprint).Outcome);
+    }
+
+    [Fact]
+    public void Release_AnotherReservation_KeepsTheRunningRequestReserved()
+    {
+        var stale = _store.Begin(Key, Fingerprint).Reservation;
+        _store.Release(Key, stale);
+        _store.Begin(Key, Fingerprint);
+
+        _store.Release(Key, stale);
+
+        Assert.Equal(IdempotencyOutcomes.InProgress, _store.Begin(Key, Fingerprint).Outcome);
     }
 
     [Fact]

@@ -11,6 +11,7 @@ import {
 } from '@angular/core';
 import { CurrentUserTeam } from '@core/api/current-user.model';
 import { SessionStore } from '@core/auth/session-store';
+import { UnsavedChanges } from '@shared/forms/unsaved-changes';
 import { TeamAvatar } from '@shared/team-avatar/team-avatar';
 import { attachDropdown } from './attach-dropdown';
 import { RoleBadge, roleBadge } from './role-badge';
@@ -30,6 +31,7 @@ interface TeamOption {
 })
 export class TeamSwitcher {
   private readonly _session = inject(SessionStore);
+  private readonly _unsaved = inject(UnsavedChanges);
   private readonly _toggle = viewChild.required<ElementRef<HTMLButtonElement>>('toggle');
 
   /** The small top-bar chip used while the sidebar is a rail. */
@@ -61,6 +63,11 @@ export class TeamSwitcher {
   }
 
   protected select(teamId: string): void {
-    this._session.selectTeam(teamId);
+    if (
+      teamId !== this._session.activeTeam()?.id &&
+      this._unsaved.confirmDiscard('Switch team and discard them?')
+    ) {
+      this._session.selectTeam(teamId);
+    }
   }
 }

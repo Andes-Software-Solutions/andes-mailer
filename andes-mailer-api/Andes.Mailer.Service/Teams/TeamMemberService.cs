@@ -179,7 +179,8 @@ public sealed class TeamMemberService(AndesMailerDbContext ctx, IUserService use
             throw new ConflictException("This user was deactivated while being added to the team.");
         }
 
-        return await GetAsync(teamId, userId, cancellationToken);
+        // Not cancellable: a cancelled read would free the Idempotency-Key, so a retry would answer 409 instead of replaying.
+        return await GetAsync(teamId, userId, CancellationToken.None);
     }
 
     /// <inheritdoc/>
@@ -198,7 +199,8 @@ public sealed class TeamMemberService(AndesMailerDbContext ctx, IUserService use
         member.RoleId = action.Role;
         await SaveAsync(cancellationToken);
 
-        return await GetAsync(teamId, userId, cancellationToken);
+        // Not cancellable: a cancelled read would free the Idempotency-Key, so a retry would answer 409 instead of replaying.
+        return await GetAsync(teamId, userId, CancellationToken.None);
     }
 
     /// <inheritdoc/>

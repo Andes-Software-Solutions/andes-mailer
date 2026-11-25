@@ -63,18 +63,18 @@ internal sealed class IdempotencyEndpointFilter(IIdempotencyStore store) : IEndp
         }
         catch
         {
-            _store.Release(scopedKey, fingerprint);
+            _store.Release(scopedKey, lookup.Reservation);
             throw;
         }
 
         // Only successes are kept: after a failure the client may fix the request and retry with the same key.
         if (result is IStatusCodeHttpResult { StatusCode: >= StatusCodes.Status200OK and < StatusCodes.Status300MultipleChoices })
         {
-            _store.Complete(scopedKey, fingerprint, result);
+            _store.Complete(scopedKey, lookup.Reservation, result);
         }
         else
         {
-            _store.Release(scopedKey, fingerprint);
+            _store.Release(scopedKey, lookup.Reservation);
         }
 
         return result;
@@ -111,12 +111,9 @@ internal sealed class IdempotencyEndpointFilter(IIdempotencyStore store) : IEndp
         hash.AppendData(Encoding.UTF8.GetBytes($"{request.Method} {request.Path.Value?.ToUpperInvariant()}\n"));
 
         // The bound request DTOs stand in for the body, which model binding has already read.
-        foreach (var argument in context.Arguments)
+        foreach (var argument in context.Arguments.OfType<object>().Where(a => a.GetType().Assembly == _dtoAssembly))
         {
-            if (argument is not null && argument.GetType().Assembly == _dtoAssembly)
-            {
-                hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(argument, argument.GetType(), JsonSerializerOptions.Web));
-            }
+            hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(argument, argument.GetType(), JsonSerializerOptions.Web));
         }
 
         return Convert.ToHexString(hash.GetHashAndReset());

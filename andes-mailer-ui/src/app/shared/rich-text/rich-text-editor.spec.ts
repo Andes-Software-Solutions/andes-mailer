@@ -1,6 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { FormField, disabled, form } from '@angular/forms/signals';
+import { FormField, disabled, form, readonly } from '@angular/forms/signals';
 import { RichTextEditor } from './rich-text-editor';
 
 @Component({
@@ -9,8 +9,12 @@ import { RichTextEditor } from './rich-text-editor';
 })
 class Host {
   readonly locked = signal(false);
+  readonly frozen = signal(false);
   readonly model = signal({ signature: '<p><strong>Sales</strong></p>' });
-  readonly form = form(this.model, (path) => disabled(path.signature, () => this.locked()));
+  readonly form = form(this.model, (path) => {
+    disabled(path.signature, () => this.locked());
+    readonly(path.signature, () => this.frozen());
+  });
 }
 
 describe('RichTextEditor', () => {
@@ -65,5 +69,19 @@ describe('RichTextEditor', () => {
     expect(element.querySelector<HTMLButtonElement>('button[aria-label="Bold"]')!.disabled).toBe(
       true,
     );
+  });
+
+  it('keeps an open link box from changing the value while the field is read-only', async () => {
+    const element = await render();
+    element.querySelector<HTMLButtonElement>('button[aria-label="Insert link"]')!.click();
+    await fixture.whenStable();
+
+    fixture.componentInstance.frozen.set(true);
+    await fixture.whenStable();
+
+    const apply = [...element.querySelectorAll<HTMLButtonElement>('.rte-link button')].find(
+      (button) => button.textContent?.trim() === 'Apply',
+    );
+    expect(apply?.disabled).toBe(true);
   });
 });

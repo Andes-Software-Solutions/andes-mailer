@@ -638,6 +638,13 @@ legend.form-label {
   line-height: 1.75rem;
 }
 
+// The dialog caps its height at the viewport, so a tall body scrolls between a fixed header and
+// footer. Global because the body is projected into ModalDialog, out of reach of its styles.
+.am-dialog .modal-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
 @media (max-width: 767.98px) {
   .modal-footer > .btn {
     flex: 1 1 auto;

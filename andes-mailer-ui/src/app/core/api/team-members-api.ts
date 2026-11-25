@@ -1,11 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { Service, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { allPages } from './all-pages';
 import { idempotent } from './idempotency/idempotency-key';
 import { Paginated } from './paginated.model';
 import { AddTeamMemberRequest, TeamMember, UpdateTeamMemberRequest } from './team-member.model';
 
-/** The API's largest page; a team of this app's size fits in one. */
+/** The API's largest page. */
 const PAGE_SIZE = 100;
 
 function membersUrl(teamId: string): string {
@@ -17,10 +18,13 @@ function membersUrl(teamId: string): string {
 export class TeamMembersApi {
   private readonly _http = inject(HttpClient);
 
+  /** Every member, across as many pages as the team needs. */
   list(teamId: string): Observable<Paginated<TeamMember>> {
-    return this._http.get<Paginated<TeamMember>>(membersUrl(teamId), {
-      params: { pageSize: PAGE_SIZE },
-    });
+    return allPages((page) =>
+      this._http.get<Paginated<TeamMember>>(membersUrl(teamId), {
+        params: { page, pageSize: PAGE_SIZE },
+      }),
+    );
   }
 
   add(

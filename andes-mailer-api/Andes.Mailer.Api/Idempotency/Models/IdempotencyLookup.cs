@@ -7,4 +7,5 @@ namespace Andes.Mailer.Api.Idempotency.Models;
 /// </summary>
 /// <param name="Outcome">Whether the request runs, waits, is rejected, or is replayed.</param>
 /// <param name="Result">The stored endpoint result when <paramref name="Outcome"/> is <see cref="IdempotencyOutcomes.Completed"/>; otherwise <see langword="null"/>.</param>
-internal readonly record struct IdempotencyLookup(IdempotencyOutcomes Outcome, object? Result = null);
+/// <param name="Reservation">The reservation to complete or release when <paramref name="Outcome"/> is <see cref="IdempotencyOutcomes.Started"/>.</param>
+internal readonly record struct IdempotencyLookup(IdempotencyOutcomes Outcome, object? Result = null, Guid Reservation = default);

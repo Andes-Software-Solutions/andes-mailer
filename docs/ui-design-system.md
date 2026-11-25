@@ -112,11 +112,12 @@ Shared, reusable pieces in `src/app/shared/` follow the design too:
 | `SignInLayout` | The centred card for every sign-in state |
 | `EmptyState` | An icon in an accent disc, a title, and text |
 | `AppLogo`, `Ridgeline` | The brand mark and the ridgeline |
-| `ModalDialog`, `ConfirmDialog` (`shared/dialog/`) | A modal on the native `<dialog>` and a ready-made confirmation. They deliberately do not use Bootstrap's `Modal`: the browser traps focus, makes the page inert, and closes on Escape, so no script or instance has to be disposed. They keep the `.modal-*` markup and styles. |
+| `ModalDialog`, `ConfirmDialog` (`shared/dialog/`) | A modal on the native `<dialog>` and a ready-made confirmation. They deliberately do not use Bootstrap's `Modal`: the browser traps focus, makes the page inert, and closes on Escape, so no script or instance has to be disposed. They keep the `.modal-*` markup and styles, but Bootstrap sets its `--bs-modal-*` variables only on `.modal`, so `.am-dialog` sets them itself. A tall `.modal-body` scrolls between a fixed header and footer. A dialog that is locked or busy reopens if the browser forces it closed: Chromium lets a page refuse only one Escape per user activation. |
+| `EmailAutocomplete` (`shared/email-autocomplete/`) | An ARIA combobox, built as a Signal Forms custom control (`[formField]`), that suggests directory mailboxes while someone types: it waits 300 ms after the last keystroke, starts at 2 characters, and still accepts a typed address. The caller supplies the `suggest` function. |
 | `RichTextEditor` (`shared/rich-text/`) | A TipTap editor for HTML, such as a team signature |
 | `TeamAvatar` (`shared/team-avatar/`) | A team's initials on its avatar colour |
 | `mediaQuery()` (`shared/layout/media-query.ts`) | A signal that follows a media query, with `PHONE_QUERY` and `TABLET_DOWN_QUERY` for the breakpoints where tables become cards |
-| `unsavedChangesGuard` (`shared/forms/`) | A `canDeactivate` guard that asks before leaving a form with unsaved changes |
+| `unsavedChangesGuard`, `UnsavedChanges` (`shared/forms/`) | A `canDeactivate` guard that asks before leaving a form with unsaved changes, and a service for changes that replace a page's data without navigating, such as switching team. A page registers with `UnsavedChanges.track(this, destroyRef)`. |
 
 Feedback toasts are not in `shared/`: `ToastStore` and `ToastStack` live in `core/feedback/`, because any feature raises one and the shell renders them.
 

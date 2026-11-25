@@ -72,7 +72,7 @@
                 class="swatch"
                 [attr.aria-pressed]="model().avatarColor === color"
                 [attr.aria-label]="colorLabels[color]"
-                [disabled]="!store.canEdit()"
+                [disabled]="!store.canEdit() || store.saving()"
                 (click)="setColor(color)"
               >
                 <app-team-avatar [name]="model().name || 'Team'" [color]="color" />

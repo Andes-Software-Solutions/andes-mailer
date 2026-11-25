@@ -12,6 +12,15 @@ import {
 
 export type ModalSize = 'sm' | 'md' | 'lg';
 
+function show(dialog: HTMLDialogElement): void {
+  // jsdom has no showModal; the dialog still renders there, as an open non-modal one.
+  if (typeof dialog.showModal === 'function') {
+    dialog.showModal();
+  } else {
+    dialog.setAttribute('open', '');
+  }
+}
+
 /**
  * A modal on the native `<dialog>`: the browser traps focus, makes the page inert, and closes on
  * Escape. It opens when it renders, so the parent shows it with `@if` and removes it to close;
@@ -63,19 +72,16 @@ export class ModalDialog {
       const opener = dialog.ownerDocument.activeElement;
       // Pointer only: Escape (the cancel event) is the keyboard way to dismiss.
       const onBackdrop = (event: MouseEvent): void => this.onBackdrop(event);
+      const onClose = (): void => this.onClose(dialog);
 
       dialog.addEventListener('click', onBackdrop);
-
-      // jsdom has no showModal; the dialog still renders there, as an open non-modal one.
-      if (typeof dialog.showModal === 'function') {
-        dialog.showModal();
-      } else {
-        dialog.setAttribute('open', '');
-      }
+      dialog.addEventListener('close', onClose);
+      show(dialog);
 
       // Removing an open dialog skips the browser's own focus return, so it is done here.
       destroyRef.onDestroy(() => {
         dialog.removeEventListener('click', onBackdrop);
+        dialog.removeEventListener('close', onClose);
 
         if (dialog.open && typeof dialog.close === 'function') {
           dialog.close();
@@ -89,9 +95,25 @@ export class ModalDialog {
   }
 
   protected onCancel(event: Event): void {
+    // Chromium lets a page refuse only one close request per user activation, and Escape is not
+    // one, so a second Escape or back gesture sends a cancel that cannot be refused. The dialog
+    // then closes, and onClose answers that.
+    if (!event.cancelable) {
+      return;
+    }
+
     event.preventDefault();
 
     if (!this.locked() && !this.busy()) {
+      this.dismissed.emit();
+    }
+  }
+
+  // Only a close the browser forced reaches this: teardown removes the listener before closing.
+  private onClose(dialog: HTMLDialogElement): void {
+    if (this.locked() || this.busy()) {
+      show(dialog);
+    } else {
       this.dismissed.emit();
     }
   }

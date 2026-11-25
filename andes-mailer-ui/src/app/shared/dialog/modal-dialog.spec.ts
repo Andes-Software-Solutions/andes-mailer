@@ -83,6 +83,32 @@ describe('ModalDialog', () => {
     expect(fixture.componentInstance.dismissals).toBe(0);
   });
 
+  // Chromium's close watchers: a second Escape sends a cancel that cannot be refused, then closes.
+  function forceClose(dialog: HTMLDialogElement): void {
+    dialog.dispatchEvent(new Event('cancel', { cancelable: false }));
+    dialog.removeAttribute('open');
+    dialog.dispatchEvent(new Event('close'));
+  }
+
+  it('opens again when the browser forces a locked dialog closed', async () => {
+    const dialog = await show();
+    fixture.componentInstance.locked.set(true);
+    await fixture.whenStable();
+
+    forceClose(dialog);
+
+    expect(dialog.open || dialog.hasAttribute('open')).toBe(true);
+    expect(fixture.componentInstance.dismissals).toBe(0);
+  });
+
+  it('asks to close once when the browser forces an unlocked dialog closed', async () => {
+    const dialog = await show();
+
+    forceClose(dialog);
+
+    expect(fixture.componentInstance.dismissals).toBe(1);
+  });
+
   it('gives focus back to what opened it', async () => {
     await show();
     fixture.nativeElement.querySelector('.modal-body button').focus();

@@ -85,7 +85,12 @@ export class EmailAutocomplete implements FormValueControl<string> {
     () => this.markInvalid() || (this.invalid() && this.touched()),
   );
 
-  protected readonly expanded = computed(() => this.open() && this.state().status !== 'idle');
+  /** A read-only field shows no list, so nothing can pick a suggestion into it. */
+  protected readonly expanded = computed(
+    () => this.editable() && this.open() && this.state().status !== 'idle',
+  );
+
+  private readonly editable = computed(() => !this.disabled() && !this.readonly());
 
   protected readonly activeId = computed(() =>
     this.expanded() && this.active() >= 0 ? `${this.listId}-${this.active()}` : null,
@@ -101,6 +106,10 @@ export class EmailAutocomplete implements FormValueControl<string> {
   }
 
   protected onKeydown(event: KeyboardEvent): void {
+    if (!this.editable()) {
+      return;
+    }
+
     const count = this.suggestions().length;
 
     switch (event.key) {
@@ -139,7 +148,7 @@ export class EmailAutocomplete implements FormValueControl<string> {
   protected onPointer(event: MouseEvent): void {
     const option = (event.target as HTMLElement).closest<HTMLElement>('[data-index]');
 
-    if (option) {
+    if (option && this.editable()) {
       // Keeps focus in the input, so blur does not close the list before the pick lands.
       event.preventDefault();
       this.choose(this.suggestions()[Number(option.dataset['index'])]);

@@ -378,10 +378,16 @@ The screens live in `andes-mailer-ui/src/app/features/`. Each is lazy-loaded, gu
 | Page | Route | Needs | What it does |
 | --- | --- | --- | --- |
 | Team members | `/team/members` | `ModifyTeamUser` | Lists the active team's members with search and a role filter. **Add members** opens a dialog with directory search and a role (Member or Administrator); it adds several people at once and keeps any it failed to add selected, so a retry sends them again with the same keys. A role changes inline, with a confirmation when promoting. **Remove** asks first, then shows an Undo toast that adds the person back. Removing the last administrator opens an explanation instead. Tablets and phones get a card layout. |
-| Team settings | `/team/settings` | `ModifyTeam` | A form (Angular Signal Forms) in three cards: General (name, avatar colour, description, and the mailbox, read-only unless you are a global `Administrator`), Sending defaults (a note on where replies go, then a rich-text signature editor), and Safety rules (the confirmation threshold). An unsaved-changes bar and a guard on leaving the page protect edits. If someone else saved first, a conflict alert offers **Reload**. Members see **Leave team**, which is disabled for the only administrator. |
-| Teams | `/teams` | `CreateTeam` | Only a global `Administrator` sees it. Lists every team, creates one in a **New team** dialog (name, mailbox, description, colour), and deactivates one. After creating, it selects the new team and opens Team members. |
+| Team settings | `/team/settings` | `ModifyTeam` | A form (Angular Signal Forms) in three cards: General (name, avatar colour, description, and the "Sends from" mailbox, read-only unless you are a global `Administrator`, who gets [directory suggestions](#mailbox-suggestions) while typing), Sending defaults (a note on where replies go, then a rich-text signature editor), and Safety rules (the confirmation threshold). An unsaved-changes bar and a guard on leaving the page protect edits, and so does the team switcher, which asks before it discards them. The form is read-only while saving, and a save that finishes after you switch team does not overwrite the team now shown. If someone else saved first, a conflict alert offers **Reload**. Members see **Leave team**, which is disabled for the only administrator. |
+| Teams | `/teams` | `CreateTeam` | Only a global `Administrator` sees it. Lists every team, creates one in a **New team** dialog (name, mailbox with directory suggestions, description, colour), and deactivates one. After creating, it selects the new team and opens Team members. |
 
 Team settings and Teams are separate because they answer different questions: settings are about **this** team and open to its administrators, while Teams is about the whole application.
+
+The Teams list and the member roster load every page from the API (100 at a time, through `core/api/all-pages.ts`), so neither stops at 100 rows.
+
+### Mailbox suggestions
+
+"Sends from" in Team settings and in the New team dialog uses `EmailAutocomplete` (`shared/email-autocomplete/`), an accessible combobox that suggests directory mailboxes through [directory search](users-and-permissions.md#search-the-directory). It asks 300 ms after you stop typing and only from 2 characters on. You can still type an address that no suggestion offers; the API verifies the mailbox when you save. If the lookup fails, the field says so and you type the address instead.
 
 The UI leaves out what the API does not have: a member's title and department, who added them, and a count of people in the organization.
 
